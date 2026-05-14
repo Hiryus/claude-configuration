@@ -1,0 +1,2 @@
+* All repository instructions are in the file `AGENTS.md`. Open this file instead of `claude.md`.
+* In all interactions and commit messages, be extremely concise and sacrifice grammar for the sake of concision.
