@@ -1,10 +1,19 @@
 .credentials.json
 .last-cleanup
+.last-update-result.json
+*.local.json
+*.lock
+*.log
+daemon.json
+daemon.status.json
+
 backups/
 cache/
+daemon/
 debug/
 downloads/
 ide/
+jobs/
 file-history/
 history.jsonl
 mcp-needs-auth-cache.json
@@ -18,3 +27,4 @@ shell-snapshots/
 stats-cache.json
 tasks/
 todos/
+

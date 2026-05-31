@@ -1,11 +1,20 @@
 {
+  "model": "opus",
   "statusLine": {
     "type": "command",
     "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& 'C:\\Users\\legqu\\.claude\\statusline-command.ps1'\""
   },
-  "effortLevel": "high",
+  "enabledPlugins": {},
+  "extraKnownMarketplaces": {
+    "ory": {
+      "source": {
+        "source": "github",
+        "repo": "ory/claude-plugins"
+      }
+    }
+  },
+  "effortLevel": "medium",
   "advisorModel": "opus",
   "autoUpdatesChannel": "latest",
-  "theme": "dark",
-  "model": "opus"
+  "theme": "dark"
 }

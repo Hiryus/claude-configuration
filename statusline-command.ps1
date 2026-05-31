@@ -58,12 +58,12 @@ $limits = @()
 if ($null -ne $five_pct) {
     $c = Get-UsageColor $five_pct
     $t = Format-TimeUntil $five_reset
-    $limits += "5h:${c}$([math]::Round($five_pct))%${reset}$(if ($t) { "/$t" })"
+    $limits += "${c}$([math]::Round($five_pct))%${reset}$(if ($t) { "/$t" })"
 }
 if ($null -ne $week_pct) {
     $c = Get-UsageColor $week_pct
     $t = Format-TimeUntil $week_reset
-    $limits += "7d:${c}$([math]::Round($week_pct))%${reset}$(if ($t) { "/$t" })"
+    $limits += "${c}$([math]::Round($week_pct))%${reset}$(if ($t) { "/$t" })"
 }
 
 $cwd = if ($input_data.workspace.current_dir) { $input_data.workspace.current_dir } elseif ($input_data.cwd) { $input_data.cwd } else { "" }
