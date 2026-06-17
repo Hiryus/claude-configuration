@@ -16,6 +16,7 @@ $reset  = "${esc}[0m"
 $blue   = "${esc}[94m"
 $green  = "${esc}[32m"
 $yellow = "${esc}[33m"
+$orange = "${esc}[38;5;208m"
 $red    = "${esc}[31m"
 $pipe   = " ${blue}|${reset} "
 
@@ -47,7 +48,8 @@ $pctColor = if ($null -ne $used_pct -and $used_pct -gt 80) { $red }
             elseif ($null -ne $used_pct -and $used_pct -gt 50) { $yellow }
             else { $green }
 
-$tokColor = if ($used_tokens -gt 100000) { $red }
+$tokColor = if ($used_tokens -gt 120000) { $red }
+            elseif ($used_tokens -gt 100000) { $orange }
             elseif ($used_tokens -gt 75000) { $yellow }
             else { $green }
 

@@ -1,0 +1,16 @@
+{
+    "session_id": "[REDACTED]",
+    "transcript_path": "C:\\Users\\legqu\\.claude\\projects\\C--Users-legqu--claude\\9cdb30b6-a8a3-4bf5-aea7-48067dbe2fee.jsonl",
+    "cwd": "C:\\Users\\legqu\\.claude",
+    "permission_mode": "default",
+    "effort": {
+        "level": "high"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+        "command": "cat .gitignore",
+        "description": "Read .gitignore via bash"
+    },
+    "tool_use_id": "toolu_01Xf66rFPesGTavvDs86dgwy"
+}

@@ -1,20 +1,37 @@
 {
-  "model": "opus",
-  "statusLine": {
-    "type": "command",
-    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& 'C:\\Users\\legqu\\.claude\\statusline-command.ps1'\""
-  },
-  "enabledPlugins": {},
-  "extraKnownMarketplaces": {
-    "ory": {
-      "source": {
-        "source": "github",
-        "repo": "ory/claude-plugins"
-      }
-    }
-  },
-  "effortLevel": "medium",
   "advisorModel": "opus",
   "autoUpdatesChannel": "latest",
-  "theme": "dark"
+  "effortLevel": "high",
+  "model": "opus",
+  "theme": "dark",
+  "voiceEnabled": false,
+  "enabledPlugins": {},
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash|PowerShell",
+      "hooks": [{
+          "type": "command",
+          "command": "uv run --with bashlex python scripts/pre_shell.py"
+      }]
+    }, {
+      "matcher": "Edit|Read|Write",
+      "hooks": [{
+          "type": "command",
+          "command": "uv run python scripts/pre_file_access.py"
+      }]
+    }
+  ]},
+  "permissions": {
+    "allow": [
+      "WebSearch"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '${USERPROFILE}\\.claude\\scripts\\statusline-command.ps1'\""
+  },
+  "voice": {
+    "enabled": false,
+    "mode": "hold"
+  }
 }

@@ -21,7 +21,7 @@ paste-cache/
 plans/
 plugins/
 projects/
-sessions-env/
+session-env/
 sessions/
 shell-snapshots/
 stats-cache.json
