@@ -7,7 +7,7 @@ from model import Decision
 from utils import format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
 
 
-def analyze(file_path:str, project_root:Path, tool_name:str) -> tuple[Decision, str]:
+def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[Decision, str]:
     if is_secret(file_path, project_root):
         return (Decision.DENY, f"Refusing access to '{file_path}': it contains secret values.")
     elif is_git_dir(file_path, project_root) and tool_name != "read":
@@ -16,18 +16,24 @@ def analyze(file_path:str, project_root:Path, tool_name:str) -> tuple[Decision, 
         return (Decision.ASK, f"'{file_path}' looks like a glob pattern; cannot statically verify which files it matches.")
     elif not in_project(file_path, project_root) and not is_tmp_file(file_path, project_root):
         return (Decision.ASK, f"Request accesses to '{file_path}' outside the project.")
-    else:
+    elif tool_name == "read" or mode in ["acceptEdits", "auto", "bypassPermissions"]:
         return (Decision.ALLOW, "")
+    else:
+        # Mode "default" -> Standard behavior: prompts for permission on first use of each tool
+        # Mode "dontAsk" -> Auto-denies tools unless pre-approved via /permissions or permissions.allow rules
+        # Source: https://code.claude.com/docs/en/permissions#permission-modes
+        return (Decision.ASK, f"Request accesses to '{file_path}' in {mode} mode.")
 
 
 def main(input_data:dict) -> str:
-    file_path: str = input_data.get("tool_input", {}).get("file_path")
+    file_path:str = input_data.get("tool_input", {}).get("file_path")
+    mode:str = input_data.get("tool_name", "default")
     project_root = Path(input_data.get("cwd", ""))
-    tool_name: str = input_data.get("tool_name", "access").lower()
+    tool_name:str = input_data.get("tool_name", "access").lower()
     if file_path is None:
         return format_response(Decision.DENY.value, "No file_path given.")
     else:
-        (decision, reason) = analyze(file_path, project_root, tool_name)
+        (decision, reason) = analyze(file_path, project_root, tool_name, mode)
         return format_response(decision.value, reason)
 
 
