@@ -131,3 +131,65 @@ def test_unknown_command_asks():
 
 def test_unparseable_denied():
     assert run(command="echo 'unterminated") == "deny"
+
+# ============================================================================
+# Secret access via every shell construct
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "echo $(cat .env)",      # command substitution
+    "cat < .env",            # read redirect
+    "echo x >> .env",        # append redirect
+    "ls; cat .env",          # chained command
+    "cat .env | grep x",     # pipe
+    "cat foo/.env",          # secret in a subdirectory
+    "cat a.txt .env",        # secret is not the first argument
+    "cat ~/.ssh/id_rsa",     # ssh private key
+])
+def test_secret_access_denied(cmd):
+    assert run(command=cmd) == "deny"
+
+# ============================================================================
+# find dangerous flags
+# ============================================================================
+
+@pytest.mark.parametrize("flag", ["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint"])
+def test_find_dangerous_flags_ask(flag):
+    assert run(command=f"find . {flag} x") == "ask"
+
+# ============================================================================
+# git --output / -o
+# ============================================================================
+
+def test_git_output_in_project_allowed():
+    assert run(command="git diff --output=out.txt") == "allow"
+
+def test_git_output_external_asks():
+    assert run(command="git diff --output=/etc/x") == "ask"
+
+def test_git_output_secret_denied():
+    assert run(command="git diff --output=.env") == "deny"
+
+def test_git_output_flag_without_value_does_not_crash():
+    # BUG: a trailing `-o`/`--output` overruns command.args[idx + 1] and raises
+    # IndexError; main() only catches ParseError, so the hook crashes instead of
+    # failing closed. It should deny (no value to validate).
+    assert run(command="git show -o") == "deny"
+
+# ============================================================================
+# uv run python --version
+# ============================================================================
+
+def test_uv_run_python_version_allowed():
+    assert run(command="uv run python --version") == "allow"
+
+# ============================================================================
+# Case-sensitive command matching
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", ["PIP install x", "Python evil.py", "GIT push"])
+def test_uppercase_denied_commands_still_denied(cmd):
+    # BUG: explicit denials match command.base case-sensitively, so on Windows
+    # (case-insensitive executables) capitalized variants slip past the hard
+    # block and only return `ask`.
+    assert run(command=cmd) == "deny"

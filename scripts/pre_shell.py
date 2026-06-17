@@ -62,7 +62,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
     if command.base == "mypy":
         return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
     if command.base in ["python", "python3"]:
-        if any(x.key == "-m" for x in command.args):
+        if any(x.low_key == "-m" for x in command.args):
             return (Decision.DENY, "Do not use `python -m`. Use `uv run` or `uvx` instead.")
         else:
             return (Decision.DENY, "Do not use python directly. Use `uv run python` instead.")
@@ -73,7 +73,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
 
     if command.base == "find":
         for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
-            if any(x.key == arg for x in command.args):
+            if any(x.low_key == arg for x in command.args):
                 return (Decision.ASK, f"`{command.base}` uses the {arg} argument.")
         return (Decision.ALLOW, "The `find` command is allowed.")
 
@@ -86,11 +86,14 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if command.subcommand == "push":
             return (Decision.DENY, "`git push` is forbidden by the security policy: only the user is allowed to push.")
         for idx, arg in enumerate(command.args):
-            if arg.key in ("--output", "-o"):
+            if arg.low_key in ["--output", "-o"]:
+                if not arg.value and len(command.args) <= idx + 1:
+                    raise ParseError("param --output has no value")
                 value = arg.value if arg.value else command.args[idx + 1].value
-                if value is None: raise ParseError("param --output has no value")
+                if value is None:
+                    raise ParseError("param --output has no value")
                 references.append(Reference(mode=Mode.WRITE, text=value))
-        if command.subcommand in ("add", "commit"):
+        if command.subcommand in ["add", "commit"]:
             references += [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args[1:] if arg.value is not None]
         if any(references):
             decision, reason = check_access(command, references, project_root)
@@ -107,7 +110,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
 
     if command.base == "uv":
-        if command.subcommand == "run" and len(command.positional_args) >= 2 and command.positional_args[1].value == "mypy":
+        if command.subcommand == "run" and len(command.positional_args) >= 2 and command.positional_args[1].low_value == "mypy":
             return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
         if command.subcommand == "sync":
             return (Decision.ALLOW, "The `uv sync` command is allowed.")

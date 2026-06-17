@@ -70,3 +70,20 @@ def test_missing_file_path_denied_for_safety():
         "tool_input": {},
     })
     assert json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+
+# ============================================================================
+# More secret / git / location edge cases
+# ============================================================================
+
+def test_secret_in_subdir_denied():
+    assert run(file_path="C:\\proj\\sub\\.env") == "deny"
+
+def test_ssh_key_denied():
+    assert run(file_path="~\\.ssh\\id_ed25519") == "deny"
+
+def test_pem_example_is_not_secret():
+    assert run(file_path="C:\\proj\\a.pem.example") == "allow"
+
+@pytest.mark.parametrize("tool", ["MultiEdit", "NotebookEdit"])
+def test_git_dir_other_writes_denied(tool):
+    assert run(file_path="C:\\proj\\.git\\config", tool_name=tool) == "deny"
