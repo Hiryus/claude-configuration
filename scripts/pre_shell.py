@@ -6,7 +6,7 @@ from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
 from parser import ParseError, Parser
-from utils import format_response, in_project, is_git_dir, is_secret, is_tmp_file
+from utils import format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -47,6 +47,8 @@ def check_access(command: Command, references: list[Reference], project_root: Pa
         return (Decision.DENY, f"Refusing to write {', '.join(gitdir_files)} inside the .git directory.")
     if command.dynamic:
         return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part; cannot verify it.")
+    if glob_files := [r.text for r in references if has_glob(r.text)]:
+        return (Decision.ASK, f"`{command.base}` uses a glob pattern ({', '.join(glob_files)}); cannot statically verify which files it matches.")
     if external_files := [r.text for r in references if not in_project(r.text, project_root) and not is_tmp_file(r.text, project_root)]:
         return (Decision.ASK, f"`{command.base}` accesses {', '.join(external_files)} outside the project.")
     return (Decision.ALLOW, "")
@@ -61,12 +63,12 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return (Decision.DENY, "Do not use `pip`. Use `uv add`, `uv sync`, or `uvx` instead.")
     if command.base == "mypy":
         return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
-    if command.base in ["python", "python3"]:
+    if command.base.rstrip(".exe") in ["python", "python3"]:
         if any(x.low_key == "-m" for x in command.args):
             return (Decision.DENY, "Do not use `python -m`. Use `uv run` or `uvx` instead.")
         else:
             return (Decision.DENY, "Do not use python directly. Use `uv run python` instead.")
-    if command.base in ["powershell", "pwsh", "powershell.exe", "cmd", "cmd.exe"]:
+    if command.base.rstrip(".exe") in ["bash", "cmd", "dash", "ksh", "powershell", "pwsh", "sh", "zsh"]:
         return (Decision.DENY, "Do not invoke another shell. Run the command directly via Bash.")
     if re.search(r"(?i)\.venv[\\/].*python", command.program): # .venv
         return (Decision.DENY, "Do not call the venv python directly. Use `uv run` or `uvx` instead.")
@@ -75,9 +77,16 @@ def check_command(command: Command, references: list[Reference], project_root: P
         for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
             if any(x.low_key == arg for x in command.args):
                 return (Decision.ASK, f"`{command.base}` uses the {arg} argument.")
-        return (Decision.ALLOW, "The `find` command is allowed.")
+        # The leading positional arguments are the search roots.
+        references = []
+        for arg in command.args:
+            if not arg.positional:
+                break
+            if arg.value is not None:
+                references.append(Reference(mode=Mode.READ, text=arg.value))
+        return check_access(command, references, project_root)
 
-    if command.base == "git":
+    if command.base.rstrip(".exe") == "git":
         references = []
         if any(x.key == "-C" for x in command.args):
             return (Decision.DENY, "Do not use `git -C`: you are already at the repository root.")
@@ -102,7 +111,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
 
-    if command.base == "podman":
+    if command.base.rstrip(".exe") == "podman":
         if command.subcommand == "inspect":
             return (Decision.ALLOW, "The `podman inspect` command is allowed.")
         if command.subcommand == "ps":
@@ -124,16 +133,15 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, "The `uv --version` command is allowed.")
         return (Decision.ASK, f"The `uv {command.subcommand}` command is not allowed by default.")
 
-    if command.base in ["cat", "grep", "head", "tail", "less", "more"]:
+    # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
+    # No awk/sed: they can execute arbitrary programs.
+    if command.base in ["cat", "grep", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "uniq", "wc"]:
         references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 
-    if command.base in ["diff", "jq", "ls", "pwd", "sort", "uniq", "wc"]:
-        return (Decision.ALLOW, f"The `{command.base}` command is allowed (read-only).")
-
-    if command.base in ["cut", "echo", "tr"]:
-        # No awk, nor sed here as they can execute arbitrary code or program under some circumstances
-        return (Decision.ALLOW, f"The `{command.base}` command is allowed (pure string maniuplation).")
+    # These touch no files: pwd takes none, echo prints its literal args, tr reads stdin only.
+    if command.base in ["pwd", "echo", "tr"]:
+        return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
     # Unknown command -> consent, surfacing any files involved.
     if accesses := describe_refs(references):
@@ -148,7 +156,7 @@ def analyze(prompt: str, project_root: Path) -> tuple[Decision, str]:
     """
     results = []
     for command in Parser.parse(prompt):
-        if not command.base:  # assignment only, ex: FOO=bar
+        if not command.base: # assignment only, ex: FOO=bar
             results.append((Decision.ALLOW, "Assignment is allowed."))
             continue
         references = referenced_paths(command)

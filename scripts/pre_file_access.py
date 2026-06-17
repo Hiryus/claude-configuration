@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from model import Decision
-from utils import format_response, in_project, is_git_dir, is_secret, is_tmp_file
+from utils import format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
 
 
 def analyze(file_path:str, project_root:Path, tool_name:str) -> tuple[Decision, str]:
@@ -12,6 +12,8 @@ def analyze(file_path:str, project_root:Path, tool_name:str) -> tuple[Decision, 
         return (Decision.DENY, f"Refusing access to '{file_path}': it contains secret values.")
     elif is_git_dir(file_path, project_root) and tool_name != "read":
         return (Decision.DENY, f"Refusing to {tool_name} '{file_path}': it's a git file'.")
+    elif has_glob(file_path):
+        return (Decision.ASK, f"'{file_path}' looks like a glob pattern; cannot statically verify which files it matches.")
     elif not in_project(file_path, project_root) and not is_tmp_file(file_path, project_root):
         return (Decision.ASK, f"Request accesses to '{file_path}' outside the project.")
     else:

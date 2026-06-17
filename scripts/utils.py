@@ -40,6 +40,14 @@ def standardize(path_text: str, project_root: Path) -> Path|PurePosixPath:
     else:
         return Path(path_text).resolve()
 
+def has_glob(path_text: str) -> bool:
+    """
+    A path with shell glob metacharacters expands at runtime, so the hook only
+    sees the literal pattern (e.g. `*` never matches is_secret). Such patterns
+    cannot be verified statically.
+    """
+    return any(ch in path_text for ch in "*?[")
+
 def in_project(path_text: str, project_root: Path) -> bool:
     return standardize(path_text, project_root).is_relative_to(project_root)
 
@@ -47,7 +55,8 @@ def is_git_dir(path_text: str, project_root: Path) -> bool:
     return bool(re.search(r"(?i)(?:^|[\\/])\.git(?:[\\/]|$)", path_text))
 
 def is_secret(path_text: str, project_root: Path) -> bool:
-    path = Path(path_text)
+    # Windows ignores ending dot
+    path = Path(path_text.rstrip(".") ) if sys.platform == "win32" else Path(path_text)
     if path.name.lower().endswith((".example", ".sample", ".template", ".dist")):
         return False
     if path.suffix in [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"]:

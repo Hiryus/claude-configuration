@@ -61,6 +61,13 @@ def test_assignment_only_allowed():
 def test_denied_commands(cmd):
     assert run(command=cmd) == "deny"
 
+@pytest.mark.parametrize("cmd", [
+    "bash -c 'cat .env'", "sh -c x", "zsh", "dash -c x", "ksh -c x",
+    "powershell.exe -c ls", "cmd.exe /c dir", "bash.exe -c x", "pwsh.exe -c x",
+])
+def test_nested_shells_denied(cmd):
+    assert run(command=cmd) == "deny"
+
 # ============================================================================
 # Secrets / .git via shell
 # ============================================================================
@@ -157,6 +164,15 @@ def test_secret_access_denied(cmd):
 def test_find_dangerous_flags_ask(flag):
     assert run(command=f"find . {flag} x") == "ask"
 
+@pytest.mark.parametrize("cmd", ["find /etc -name x", "find / -type f", "find .. -name y"])
+def test_find_external_root_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+def test_find_name_value_not_treated_as_path():
+    # `id_rsa` is the value of -name, not a search root, so it must not trip
+    # the secret check.
+    assert run(command="find . -name id_rsa") == "allow"
+
 # ============================================================================
 # git --output / -o
 # ============================================================================
@@ -193,3 +209,46 @@ def test_uppercase_denied_commands_still_denied(cmd):
     # (case-insensitive executables) capitalized variants slip past the hard
     # block and only return `ask`.
     assert run(command=cmd) == "deny"
+
+# ============================================================================
+# Security bypasses (currently failing -- documenting holes to close)
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "sort .env",            # prints the file
+    "cut -d= -f2 .env",     # prints selected fields
+    "diff .env /dev/null",  # prints the whole file as a diff
+    "jq . .env",            # parses and prints the file
+    "uniq .env",            # prints the file
+])
+def test_readonly_command_secret_disclosure_denied(cmd):
+    # BYPASS: the diff/jq/sort/uniq and cut groups return ALLOW without running
+    # check_access, so these "read-only" commands leak secret file contents.
+    # Only the cat/grep/head/tail/less/more group checks its file references.
+    assert run(command=cmd) == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "cat *",        # expands to every file, incl. .env
+    "cat .e*",      # expands to .env
+    "cat .en?",     # expands to .env
+])
+def test_glob_not_silently_allowed(cmd):
+    # BYPASS: globs are expanded by the shell at runtime; the hook sees the
+    # literal pattern, which never matches is_secret. An unexpandable pattern
+    # cannot be verified statically and should not be auto-allowed.
+    assert run(command=cmd) != "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "ls /etc",                  # lists an external dir
+    "sort /etc/passwd",         # reads an external file
+    "find / -name id_rsa",      # traverses outside the project
+])
+def test_external_access_via_allowed_command_not_allowed(cmd):
+    # BYPASS: ls/sort/find never check in_project on their path arguments.
+    assert run(command=cmd) != "allow"
+
+def test_trailing_dot_secret_not_allowed():
+    # BYPASS: Windows strips a trailing dot, so `.env.` opens `.env`, but
+    # is_secret sees the literal ".env." and misses it.
+    assert run(command="cat .env.") != "allow"
+

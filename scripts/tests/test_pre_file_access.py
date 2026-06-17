@@ -87,3 +87,11 @@ def test_pem_example_is_not_secret():
 @pytest.mark.parametrize("tool", ["MultiEdit", "NotebookEdit"])
 def test_git_dir_other_writes_denied(tool):
     assert run(file_path="C:\\proj\\.git\\config", tool_name=tool) == "deny"
+
+# ============================================================================
+# Glob patterns
+# ============================================================================
+
+@pytest.mark.parametrize("file_path", ["C:\\proj\\*", "C:\\proj\\.e*", "C:\\proj\\src\\?.py"])
+def test_glob_path_asks(file_path):
+    assert run(file_path=file_path) == "ask"
