@@ -11,13 +11,13 @@
       "matcher": "Bash|PowerShell",
       "hooks": [{
           "type": "command",
-          "command": "uv run --with bashlex python scripts/pre_shell.py"
+          "command": "uv run --with bashlex python ${USERPROFILE}/.claude/scripts/pre_shell.py"
       }]
     }, {
       "matcher": "Edit|Read|Write",
       "hooks": [{
           "type": "command",
-          "command": "uv run python scripts/pre_file_access.py"
+          "command": "uv run python ${USERPROFILE}/.claude/scripts/pre_file_access.py"
       }]
     }
   ]},
