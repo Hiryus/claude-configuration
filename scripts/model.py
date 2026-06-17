@@ -2,6 +2,9 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 
+# ============================================================================
+# General flow
+# ============================================================================
 
 class Decision(Enum):
     """
@@ -11,20 +14,16 @@ class Decision(Enum):
     ASK = "ask"
     DENY = "deny"
 
+# ============================================================================
+# Bash parsing
+# ============================================================================
+
 class Mode(Enum):
     """
     How a path is accessed by a command.
     """
     READ = "read"
     WRITE = "write"
-
-@dataclass
-class Reference:
-    """
-    A path referenced by a command, with its access mode.
-    """
-    mode: Mode
-    text: str
 
 @dataclass
 class Argument:
@@ -34,6 +33,14 @@ class Argument:
     key: str | None      # None for positional args, else the flag (`-o`, `--out`)
     positional: bool
     value: str | None    # value glued to this token (`--out=foo`), else None
+
+@dataclass
+class Reference:
+    """
+    A path referenced by a command, with its access mode.
+    """
+    mode: Mode
+    text: str
 
 @dataclass
 class Redirect:

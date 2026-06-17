@@ -55,25 +55,25 @@ def check_command(command: Command, references: list[Reference], project_root: P
     """
     Command-specific checks: explicit denials and the allow-list classification.
     """
-    if command.base in ("cd"):
+    if command.base in ["cd"]:
         return (Decision.DENY, "Do not change directory as it messes with security path validation.")
     if re.match(r"^pip[\d.]*$", command.base): # PIP
         return (Decision.DENY, "Do not use `pip`. Use `uv add`, `uv sync`, or `uvx` instead.")
     if command.base == "mypy":
         return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
-    if command.base in ("python", "python3"):
+    if command.base in ["python", "python3"]:
         if any(x.key == "-m" for x in command.args):
             return (Decision.DENY, "Do not use `python -m`. Use `uv run` or `uvx` instead.")
         else:
             return (Decision.DENY, "Do not use python directly. Use `uv run python` instead.")
+    if command.base in ["powershell", "pwsh", "powershell.exe", "cmd", "cmd.exe"]:
+        return (Decision.DENY, "Do not invoke another shell. Run the command directly via Bash.")
     if re.search(r"(?i)\.venv[\\/].*python", command.program): # .venv
         return (Decision.DENY, "Do not call the venv python directly. Use `uv run` or `uvx` instead.")
-    if command.base in ("powershell", "pwsh", "powershell.exe", "cmd", "cmd.exe"):
-        return (Decision.DENY, "Do not invoke another shell. Run the command directly via Bash.")
 
     if command.base == "find":
         for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
-            if any(x == arg for x in command.args):
+            if any(x.key == arg for x in command.args):
                 return (Decision.ASK, f"`{command.base}` uses the {arg} argument.")
         return (Decision.ALLOW, "The `find` command is allowed.")
 
@@ -111,21 +111,21 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
         if command.subcommand == "sync":
             return (Decision.ALLOW, "The `uv sync` command is allowed.")
-        if command.subcommand == "run" and len(command.positional_args) >= 2:
+        if command.subcommand == "run" and len(command.args) >= 2:
             if command.positional_args[1].value in ["basedpyright", "pyright", "pytest", "ruff", "ty"]:
                 return (Decision.ALLOW, f"The `uv run {command.positional_args[1].value}` command is allowed.")
+            if len(command.args) == 3 and command.args[1].value == "python" and command.args[2].key == "--version":
+                return (Decision.ALLOW, f"The `uv {command.args[1].key} --version` command is allowed.")
             return (Decision.ASK, f"The `uv run {command.positional_args[1].value}` command is not allowed by default.")
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `uv --version` command is allowed.")
-        if len(command.args) == 2 and command.args[1].key == "python" and command.args[2].key == "--version":
-            return (Decision.ALLOW, f"The `uv {command.args[1].key} --version` command is allowed.")
         return (Decision.ASK, f"The `uv {command.subcommand}` command is not allowed by default.")
 
     if command.base in ["cat", "grep", "head", "tail", "less", "more"]:
-        references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args[1:] if arg.value is not None]
+        references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 
-    if command.base in ["diff", "jq", "ls", "nl", "pwd", "sort", "uniq", "wc"]:
+    if command.base in ["diff", "jq", "ls", "pwd", "sort", "uniq", "wc"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed (read-only).")
 
     if command.base in ["cut", "echo", "tr"]:
@@ -162,19 +162,23 @@ def analyze(prompt: str, project_root: Path) -> tuple[Decision, str]:
 # Entry point
 # ============================================================================
 
-if __name__ == "__main__":
+def main(input_data:dict) -> str:
     try:
-        input_data: dict = json.loads(sys.stdin.read())
         project_root = Path(input_data.get("cwd", ""))
         prompt: str = input_data.get("tool_input", {}).get("command")
         tool_name: str = input_data.get("tool_name", "")
         if tool_name == "Bash":
             decision, reason = analyze(prompt, project_root)
-            print(format_response(decision.value, reason))
+            return format_response(decision.value, reason)
         else:
             reason = f"Tool `{tool_name}` is not allowed. Use the `Bash` tool instead."
-            print(format_response(Decision.DENY.value, reason))
+            return format_response(Decision.DENY.value, reason)
     except ParseError as err:
-        print(format_response(Decision.DENY.value, f"Refusing to run an unparseable command: {err}"))
+        return format_response(Decision.DENY.value, f"Refusing to run an unparseable command: {err}")
+
+if __name__ == "__main__":
+    try:
+        input_data: dict = json.loads(sys.stdin.read())
+        print(main(input_data))
     except Exception as err:
         print(format_response(Decision.DENY.value, f"Hook error, denying for safety: {err}"))
