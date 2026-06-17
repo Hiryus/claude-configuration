@@ -62,8 +62,14 @@ def test_denied_commands(cmd):
     assert run(command=cmd) == "deny"
 
 @pytest.mark.parametrize("cmd", [
-    "bash -c 'cat .env'", "sh -c x", "zsh", "dash -c x", "ksh -c x",
-    "powershell.exe -c ls", "cmd.exe /c dir", "bash.exe -c x", "pwsh.exe -c x",
+    "bash -c 'cat .env'",
+    "ksh -c x",
+    "sh -c x",
+    "zsh", "dash -c x",
+    "bash.exe -c x",
+    "cmd.exe /c dir",
+    "powershell.exe -c ls",
+    "pwsh.exe -c x",
 ])
 def test_nested_shells_denied(cmd):
     assert run(command=cmd) == "deny"
@@ -169,8 +175,7 @@ def test_find_external_root_asks(cmd):
     assert run(command=cmd) == "ask"
 
 def test_find_name_value_not_treated_as_path():
-    # `id_rsa` is the value of -name, not a search root, so it must not trip
-    # the secret check.
+    # `id_rsa` is the value of -name, not a search root, so it must not trip the secret.
     assert run(command="find . -name id_rsa") == "allow"
 
 # ============================================================================
@@ -187,9 +192,6 @@ def test_git_output_secret_denied():
     assert run(command="git diff --output=.env") == "deny"
 
 def test_git_output_flag_without_value_does_not_crash():
-    # BUG: a trailing `-o`/`--output` overruns command.args[idx + 1] and raises
-    # IndexError; main() only catches ParseError, so the hook crashes instead of
-    # failing closed. It should deny (no value to validate).
     assert run(command="git show -o") == "deny"
 
 # ============================================================================
@@ -205,9 +207,6 @@ def test_uv_run_python_version_allowed():
 
 @pytest.mark.parametrize("cmd", ["PIP install x", "Python evil.py", "GIT push"])
 def test_uppercase_denied_commands_still_denied(cmd):
-    # BUG: explicit denials match command.base case-sensitively, so on Windows
-    # (case-insensitive executables) capitalized variants slip past the hard
-    # block and only return `ask`.
     assert run(command=cmd) == "deny"
 
 # ============================================================================
@@ -222,9 +221,6 @@ def test_uppercase_denied_commands_still_denied(cmd):
     "uniq .env",            # prints the file
 ])
 def test_readonly_command_secret_disclosure_denied(cmd):
-    # BYPASS: the diff/jq/sort/uniq and cut groups return ALLOW without running
-    # check_access, so these "read-only" commands leak secret file contents.
-    # Only the cat/grep/head/tail/less/more group checks its file references.
     assert run(command=cmd) == "deny"
 
 @pytest.mark.parametrize("cmd", [
@@ -233,9 +229,6 @@ def test_readonly_command_secret_disclosure_denied(cmd):
     "cat .en?",     # expands to .env
 ])
 def test_glob_not_silently_allowed(cmd):
-    # BYPASS: globs are expanded by the shell at runtime; the hook sees the
-    # literal pattern, which never matches is_secret. An unexpandable pattern
-    # cannot be verified statically and should not be auto-allowed.
     assert run(command=cmd) != "allow"
 
 @pytest.mark.parametrize("cmd", [
@@ -244,11 +237,9 @@ def test_glob_not_silently_allowed(cmd):
     "find / -name id_rsa",      # traverses outside the project
 ])
 def test_external_access_via_allowed_command_not_allowed(cmd):
-    # BYPASS: ls/sort/find never check in_project on their path arguments.
     assert run(command=cmd) != "allow"
 
 def test_trailing_dot_secret_not_allowed():
-    # BYPASS: Windows strips a trailing dot, so `.env.` opens `.env`, but
-    # is_secret sees the literal ".env." and misses it.
+    # Windows strips a trailing dot, so `.env.` opens `.env`.
     assert run(command="cat .env.") != "allow"
 
