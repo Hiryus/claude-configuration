@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from model import Decision
-from utils import format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
+from utils import expand_glob, format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
 
 
 def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[Decision, str]:
@@ -13,10 +13,19 @@ def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[
     elif is_git_dir(file_path, project_root) and tool_name != "read":
         return (Decision.DENY, f"Refusing to {tool_name} '{file_path}': it's a git file'.")
     elif has_glob(file_path):
-        return (Decision.ASK, f"'{file_path}' looks like a glob pattern; cannot statically verify which files it matches.")
+        matches = expand_glob(file_path, project_root)
+        if matches is None:
+            if tool_name == "read" and not project_root.exists():
+                return (Decision.ALLOW, "")  # the project itself doesn't exist; nothing real to read
+            return (Decision.ASK, f"'{file_path}' looks like a glob pattern; cannot statically verify which files it matches.")
+        for match in matches:
+            decision, reason = analyze(str(match), project_root, tool_name, mode)
+            if decision is not Decision.ALLOW:
+                return (decision, reason)
     elif not in_project(file_path, project_root) and not is_tmp_file(file_path, project_root):
         return (Decision.ASK, f"Request accesses to '{file_path}' outside the project.")
-    elif tool_name == "read" or mode in ["acceptEdits", "auto", "bypassPermissions"]:
+
+    if tool_name == "read" or mode in ["acceptEdits", "auto", "bypassPermissions"]:
         return (Decision.ALLOW, "")
     else:
         # Mode "default" -> Standard behavior: prompts for permission on first use of each tool

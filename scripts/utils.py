@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 import re
@@ -44,9 +45,37 @@ def has_glob(path_text: str) -> bool:
     """
     A path with shell glob metacharacters expands at runtime, so the hook only
     sees the literal pattern (e.g. `*` never matches is_secret). Such patterns
-    cannot be verified statically.
+    cannot be verified statically. Includes brace expansion (`{a,b}`) and
+    extglob (`!(a)`, `@(a|b)`, ...): bash expands both, but expand_glob can't,
+    so they must still be routed there to fall back to "can't verify".
     """
-    return any(ch in path_text for ch in "*?[")
+    return any(ch in path_text for ch in "*?[{}()")
+
+def expand_glob(path_text: str, project_root: Path) -> list[Path] | None:
+    """
+    Expand a glob to the concrete paths it currently matches, using bash's
+    default semantics (no globstar, no dotglob): `*` and `**` don't cross a
+    `/` on their own, and a leading `*` skips dotfiles unless the pattern
+    segment itself starts with `.`.
+
+    Returns None -- "don't trust this as positive evidence" -- when:
+      - the pattern uses syntax Python's glob doesn't understand (braces,
+        extglob), since it would silently treat it as literal characters
+        and could under-report matches that bash would actually expand to.
+      - the anchored pattern isn't a real filesystem path on this OS (e.g.
+        a POSIX-style absolute path while running on Windows).
+
+    An empty list is a real (if negative) result, whether the pattern
+    matches nothing in a real directory or the directory itself doesn't
+    exist: glob.glob() returns [] either way without erroring, and in both
+    cases there's nothing real for the pattern to disclose right now.
+    """
+    if any(ch in path_text for ch in "{}()"):
+        return None
+    anchored = standardize(path_text, project_root)
+    if not isinstance(anchored, Path):
+        return None
+    return [Path(match) for match in glob.glob(str(anchored), recursive=False)]
 
 def in_project(path_text: str, project_root: Path) -> bool:
     return standardize(path_text, project_root).is_relative_to(project_root)

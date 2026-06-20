@@ -228,8 +228,15 @@ def test_readonly_command_secret_disclosure_denied(cmd):
     "cat .e*",      # expands to .env
     "cat .en?",     # expands to .env
 ])
-def test_glob_not_silently_allowed(cmd):
-    assert run(command=cmd) != "allow"
+def test_glob_read_in_nonexistent_project_allowed(cmd):
+    # ROOT ("C:\proj") doesn't exist on disk: there's nothing real for a
+    # read to disclose, regardless of what the pattern would expand to.
+    assert run(command=cmd) == "allow"
+
+def test_glob_write_in_nonexistent_project_still_asks():
+    # Writes stay conservative even when the project doesn't exist: the
+    # repo-missing exemption only ever applies to reads.
+    assert run(command="echo hi > *.log") == "ask"
 
 @pytest.mark.parametrize("cmd", [
     "ls /etc",                  # lists an external dir
@@ -242,4 +249,67 @@ def test_external_access_via_allowed_command_not_allowed(cmd):
 def test_trailing_dot_secret_not_allowed():
     # Windows strips a trailing dot, so `.env.` opens `.env`.
     assert run(command="cat .env.") != "allow"
+
+# ============================================================================
+# Glob patterns -- real expansion against the filesystem
+# ============================================================================
+
+def test_glob_matching_in_project_files_allowed(tmp_path):
+    (tmp_path / "a.py").touch()
+    (tmp_path / "b.py").touch()
+    assert run(command="cat *.py", cwd=str(tmp_path)) == "allow"
+
+def test_glob_expanding_to_secret_file_denied(tmp_path):
+    (tmp_path / ".env").touch()
+    assert run(command="cat .e*", cwd=str(tmp_path)) == "deny"
+
+def test_glob_in_subdirectory_matches_real_files(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "a.py").touch()
+    assert run(command="cat sub/*.py", cwd=str(tmp_path)) == "allow"
+
+def test_glob_in_subdirectory_expanding_to_secret_denied(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / ".env").touch()
+    assert run(command="cat sub/.e*", cwd=str(tmp_path)) == "deny"
+
+def test_doublestar_matches_one_level_deep(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "a.py").touch()
+    assert run(command="cat **/*.py", cwd=str(tmp_path)) == "allow"
+
+def test_doublestar_does_not_recurse_into_secret_two_levels_deep(tmp_path):
+    # "**" without globstar acts like a single "*": a secret two levels down
+    # must stay invisible to the expansion (zero real matches -> allow,
+    # not a DENY based on a file the glob never actually "saw").
+    deep = tmp_path / "sub1" / "sub2"
+    deep.mkdir(parents=True)
+    (deep / ".env").touch()
+    assert run(command="cat **/.e*", cwd=str(tmp_path)) == "allow"
+
+def test_glob_zero_matches_in_real_dir_allowed(tmp_path):
+    assert run(command="cat *.xyz", cwd=str(tmp_path)) == "allow"
+
+def test_glob_in_missing_subdirectory_allowed(tmp_path):
+    # The subdirectory doesn't exist, but glob.glob() still returns a real,
+    # trustworthy empty list -- nothing to disclose, so a read is allowed.
+    assert run(command="cat missing/*.py", cwd=str(tmp_path)) == "allow"
+
+def test_doublestar_in_missing_subdirectory_allowed(tmp_path):
+    assert run(command="cat missing/**/*.py", cwd=str(tmp_path)) == "allow"
+
+def test_glob_brace_syntax_still_asks(tmp_path):
+    (tmp_path / "a.py").touch()
+    (tmp_path / "b.py").touch()
+    assert run(command="cat file{a,b}.py", cwd=str(tmp_path)) == "ask"
+
+def test_glob_extglob_syntax_not_silently_allowed(tmp_path):
+    # bash "!(...)" extglob syntax; the leading "!" is also history expansion
+    # to a plain shell, so the parser may reject it outright (deny) rather
+    # than reach the glob-uncertainty path (ask) -- either is acceptably safe.
+    (tmp_path / "a.py").touch()
+    assert run(command="cat !(a).py", cwd=str(tmp_path)) != "allow"
 

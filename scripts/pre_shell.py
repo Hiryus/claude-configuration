@@ -6,7 +6,7 @@ from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
 from parser import ParseError, Parser
-from utils import format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
+from utils import expand_glob, format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -41,15 +41,29 @@ def check_access(command: Command, references: list[Reference], project_root: Pa
     """
     Generic, command-agnostic checks on the files and shape of a command.
     """
-    if secret_files := [r.text for r in references if is_secret(r.text, project_root)]:
+    # Expand gloab patterns if any
+    expanded = []
+    for r in references:
+        if not has_glob(r.text):
+            expanded.append(r)
+            continue
+        matches = expand_glob(r.text, project_root)
+        if matches is None:
+            expanded.append(r)  # can't trust expansion -- keep as unresolved glob
+        elif not matches and r.mode is Mode.WRITE:
+            expanded.append(r)  # nullglob-off: bash would still write the literal, unverified name
+        else:
+            expanded.extend(Reference(mode=r.mode, text=str(m)) for m in matches)
+    # Then apply ALLOW/ASK/DENY rules
+    if secret_files := [r.text for r in expanded if is_secret(r.text, project_root)]:
         return (Decision.DENY, f"Refusing to access {', '.join(secret_files)}: they look like secret files.")
-    if gitdir_files := [r.text for r in references if r.mode is Mode.WRITE and is_git_dir(r.text, project_root)]:
+    if gitdir_files := [r.text for r in expanded if r.mode is Mode.WRITE and is_git_dir(r.text, project_root)]:
         return (Decision.DENY, f"Refusing to write {', '.join(gitdir_files)} inside the .git directory.")
     if command.dynamic:
         return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part; cannot verify it.")
-    if glob_files := [r.text for r in references if has_glob(r.text)]:
+    if glob_files := [r.text for r in expanded if has_glob(r.text)]:
         return (Decision.ASK, f"`{command.base}` uses a glob pattern ({', '.join(glob_files)}); cannot statically verify which files it matches.")
-    if external_files := [r.text for r in references if not in_project(r.text, project_root) and not is_tmp_file(r.text, project_root)]:
+    if external_files := [r.text for r in expanded if not in_project(r.text, project_root) and not is_tmp_file(r.text, project_root)]:
         return (Decision.ASK, f"`{command.base}` accesses {', '.join(external_files)} outside the project.")
     return (Decision.ALLOW, "")
 
