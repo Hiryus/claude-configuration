@@ -1,37 +1,44 @@
 {
-  "advisorModel": "opus",
-  "autoUpdatesChannel": "latest",
-  "effortLevel": "high",
-  "model": "opus",
-  "theme": "dark",
-  "voiceEnabled": false,
-  "enabledPlugins": {},
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "Bash|PowerShell",
-      "hooks": [{
-          "type": "command",
-          "command": "uv run --with bashlex python ${USERPROFILE}/.claude/scripts/pre_shell.py"
-      }]
-    }, {
-      "matcher": "Edit|Read|Write",
-      "hooks": [{
-          "type": "command",
-          "command": "uv run python ${USERPROFILE}/.claude/scripts/pre_file_access.py"
-      }]
-    }
-  ]},
   "permissions": {
     "allow": [
       "WebSearch"
+    ]
+  },
+  "model": "sonnet",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --with bashlex python ${USERPROFILE}/.claude/scripts/pre_shell.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Read|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run python ${USERPROFILE}/.claude/scripts/pre_file_access.py"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
     "type": "command",
     "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '${USERPROFILE}\\.claude\\scripts\\statusline-command.ps1'\""
   },
+  "enabledPlugins": {},
+  "effortLevel": "high",
+  "advisorModel": "opus",
+  "autoUpdatesChannel": "latest",
   "voice": {
     "enabled": false,
     "mode": "hold"
-  }
+  },
+  "theme": "dark",
+  "voiceEnabled": false
 }

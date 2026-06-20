@@ -107,7 +107,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if any(references):
             decision, reason = check_access(command, references, project_root)
             if decision != Decision.ALLOW: return decision, reason
-        if command.subcommand in ["add", "check-ignore", "commit", "diff", "hash-object", "log", "ls-files", "show", "status"]:
+        if command.subcommand in ["add", "check-ignore", "commit", "diff", "grep", "hash-object", "log", "ls-files", "ls-tree", "merge-base", "show", "status"]:
             return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
 
@@ -116,6 +116,8 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, "The `podman inspect` command is allowed.")
         if command.subcommand == "ps":
             return (Decision.ALLOW, "The `podman ps` command is allowed.")
+        if len(command.args) == 1 and command.args[0].key == "--version":
+            return (Decision.ALLOW, "The `podman --version` command is allowed.")
         return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
 
     if command.base == "uv":
@@ -140,7 +142,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return check_access(command, references, project_root)
 
     # These touch no files: pwd takes none, echo prints its literal args, tr reads stdin only.
-    if command.base in ["pwd", "echo", "tr"]:
+    if command.base in ["pwd", "echo", "sleep", "tr"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
     # Unknown command -> consent, surfacing any files involved.
