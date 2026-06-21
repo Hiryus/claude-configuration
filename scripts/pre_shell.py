@@ -156,7 +156,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return check_access(command, references, project_root)
 
     # These touch no files: pwd takes none, echo prints its literal args, tr reads stdin only.
-    if command.base in ["pwd", "echo", "sleep", "tr"]:
+    if command.base in ["pwd", "echo", "printf", "sleep", "tr"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
     # Unknown command -> consent, surfacing any files involved.
