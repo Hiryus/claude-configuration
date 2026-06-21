@@ -36,7 +36,7 @@ def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[
 
 def main(input_data:dict) -> str:
     file_path:str = input_data.get("tool_input", {}).get("file_path")
-    mode:str = input_data.get("tool_name", "default")
+    mode:str = input_data.get("permission_mode", "default")
     project_root = Path(input_data.get("cwd", ""))
     tool_name:str = input_data.get("tool_name", "access").lower()
     if file_path is None:
