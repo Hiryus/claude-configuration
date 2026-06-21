@@ -17,7 +17,7 @@ class ParseError(Exception):
 
 class Parser:
     @staticmethod
-    def build_argument(word: str) -> Argument:
+    def build_argument(word:str) -> Argument:
         """
         Parse one shell token. A value is only attached when glued with `=`
         (`--out=foo`); the space-separated `--out foo` form spans two tokens,
@@ -29,7 +29,7 @@ class Parser:
         return Argument(key=None, positional=True, value=word)
 
     @staticmethod
-    def build_command(node: bashlex.ast.node) -> Command:
+    def build_command(node:bashlex.ast.node) -> Command:
         """
         Split a CommandNode into program / args / redirects, skipping env prefixes.
         """
@@ -65,7 +65,7 @@ class Parser:
         )
 
     @staticmethod
-    def collect(nodes: list, kind: str) -> list:
+    def collect(nodes:list, kind:str) -> list:
         """
         Every node of `kind` reachable from `nodes`, descending into children
         (including command/process substitutions). Iterative, so deep nesting
@@ -85,7 +85,7 @@ class Parser:
         return found
 
     @staticmethod
-    def parse(text: str) -> list[Command]:
+    def parse(text:str) -> list[Command]:
         """
         Parse a bash prompt.
         Raises a ParseError on anything unparseable.
@@ -96,8 +96,17 @@ class Parser:
             raise ParseError(f"unparseable command: {err}") from err
 
 
-def is_dynamic(node: bashlex.ast.node | None) -> bool:
+def is_dynamic(node:bashlex.ast.node|None) -> bool:
     """
-    A word built from a substitution/expansion -- value unknown at parse time.
+    A word built from a substitution/expansion -- value unknown at parse time.  
+    Tilde ("~") expanding to the home directory is NOT considered dynamic.
     """
-    return bool(getattr(node, "parts", None))
+    parts = getattr(node, "parts", None)
+    # No part == not dynamic
+    if parts is None:
+        return False
+    # Tilde is not dynamic
+    if all(p.kind == "tilde" for p in parts):
+        return False
+    # Any other part is dynamic
+    return True

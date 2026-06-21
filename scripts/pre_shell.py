@@ -60,7 +60,7 @@ def check_access(command: Command, references: list[Reference], project_root: Pa
     if gitdir_files := [r.text for r in expanded if r.mode is Mode.WRITE and is_git_dir(r.text, project_root)]:
         return (Decision.DENY, f"Refusing to write {', '.join(gitdir_files)} inside the .git directory.")
     if command.dynamic:
-        return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part; cannot verify it.")
+        return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part - cannot verify it.")
     if glob_files := [r.text for r in expanded if has_glob(r.text)]:
         return (Decision.ASK, f"`{command.base}` uses a glob pattern ({', '.join(glob_files)}); cannot statically verify which files it matches.")
     if external_files := [r.text for r in expanded if not in_project(r.text, project_root) and not is_tmp_file(r.text, project_root)]:
@@ -126,6 +126,11 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
 
     if command.base.rstrip(".exe") == "podman":
+        if command.subcommand == "compose":
+            if len(command.args) >= 2 and command.args[1].value == "logs":
+                return (Decision.ALLOW, "The `podman compose logs` command is allowed.")
+            if len(command.args) >= 2 and command.args[1].value == "ps":
+                return (Decision.ALLOW, "The `podman compose ps` command is allowed.")
         if command.subcommand == "inspect":
             return (Decision.ALLOW, "The `podman inspect` command is allowed.")
         if command.subcommand == "ps":
