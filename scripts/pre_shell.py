@@ -87,6 +87,10 @@ def check_command(command: Command, references: list[Reference], project_root: P
     if re.search(r"(?i)\.venv[\\/].*python", command.program): # .venv
         return (Decision.DENY, "Do not call the venv python directly. Use `uv run` or `uvx` instead.")
 
+    if command.base == "cmp":
+        references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
+        return check_access(command, references, project_root)
+
     if command.base == "find":
         for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
             if any(x.low_key == arg for x in command.args):
@@ -121,9 +125,30 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if any(references):
             decision, reason = check_access(command, references, project_root)
             if decision != Decision.ALLOW: return decision, reason
-        if command.subcommand in ["add", "check-ignore", "commit", "diff", "grep", "hash-object", "log", "ls-files", "ls-tree", "merge-base", "show", "status"]:
+        if command.subcommand in ["add", "check-ignore", "commit", "diff", "grep", "hash-object", "log", "ls-files", "ls-tree", "merge-base", "rev-parse", "show", "status"]:
             return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
+
+    if command.base.rstrip(".exe") == "node":
+        if len(command.args) == 1 and command.args[0].key == "--version":
+            return (Decision.ALLOW, "The `node --version` command is allowed.")
+        if len(command.args) >= 1 and command.args[0].key == "--check":
+            references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
+            return check_access(command, references, project_root)
+        if command.subcommand:
+            return (Decision.ASK, f"The `node {command.subcommand}` command is not allowed by default.")
+        else:
+            return (Decision.ASK, f"The `node` command is not allowed by default.")
+
+    if command.base.rstrip(".exe") == "npm":
+        if len(command.args) == 1 and command.args[0].key == "--version":
+            return (Decision.ALLOW, "The `npm --version` command is allowed.")
+        if command.subcommand in ["ls", "view"]:
+            return (Decision.ALLOW, f"The `npm {command.subcommand}` command is allowed.")
+        if command.subcommand:
+            return (Decision.ASK, f"The `npm {command.subcommand}` command is not allowed by default.")
+        else:
+            return (Decision.ASK, f"The `npm` command is not allowed by default.")
 
     if command.base.rstrip(".exe") == "podman":
         if command.subcommand == "compose":
@@ -133,11 +158,14 @@ def check_command(command: Command, references: list[Reference], project_root: P
                 return (Decision.ALLOW, "The `podman compose ps` command is allowed.")
         if command.subcommand == "inspect":
             return (Decision.ALLOW, "The `podman inspect` command is allowed.")
-        if command.subcommand == "ps":
-            return (Decision.ALLOW, "The `podman ps` command is allowed.")
+        if command.subcommand in ["logs", "ps"]:
+            return (Decision.ALLOW, f"The `podman {command.subcommand}` command is allowed.")
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `podman --version` command is allowed.")
-        return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
+        if command.subcommand:
+            return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
+        else:
+            return (Decision.ASK, f"The `podman` command is not allowed by default.")
 
     if command.base == "uv":
         if command.subcommand == "run" and len(command.positional_args) >= 2 and command.positional_args[1].low_value == "mypy":
@@ -152,7 +180,10 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ASK, f"The `uv run {command.positional_args[1].value}` command is not allowed by default.")
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `uv --version` command is allowed.")
-        return (Decision.ASK, f"The `uv {command.subcommand}` command is not allowed by default.")
+        if command.subcommand:
+            return (Decision.ASK, f"The `uv {command.subcommand}` command is not allowed by default.")
+        else:
+            return (Decision.ASK, f"The `uv` command is not allowed by default.")
 
     # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
     # No awk/sed: they can execute arbitrary programs.
