@@ -143,6 +143,38 @@ def test_test_command_allowed(cmd):
 def test_test_command_secret_denied():
     assert run(command="test -f .env") == "deny"
 
+# ============================================================================
+# sed
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "sed -n '100,170p'",
+    "sed -n '5p'",
+    "sed -n '$p'",
+    "sed -n '10,$p'",
+    "sed -n '5p;10,20p'",
+    "sed --quiet '5p'",
+    "sed -n '100,170p' foo.txt",
+])
+def test_sed_simple_line_print_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_sed_simple_print_secret_file_denied():
+    assert run(command="sed -n '100,170p' .env") == "deny"
+
+def test_sed_simple_print_external_file_asks():
+    assert run(command="sed -n '100,170p' /etc/passwd") == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "sed 's/foo/bar/' file.txt",         # substitution -- can rewrite content
+    "sed -n '1,5w out.txt'",             # write command
+    "sed -n '1,5e ls'",                  # execute command
+    "sed -i 's/a/b/' file.txt",          # in-place edit flag
+    "sed -n '/foo/p'",                   # regex address, not a plain line range
+])
+def test_sed_non_simple_script_asks(cmd):
+    assert run(command=cmd) == "ask"
+
 def test_test_command_external_asks():
     assert run(command="test -e /etc/passwd") == "ask"
 

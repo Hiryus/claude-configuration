@@ -29,6 +29,11 @@ def referenced_paths(command: Command) -> list[Reference]:
 # Security policy  (business logic)
 # ============================================================================
 
+# A "simple" sed script: one or more `addr[,addr]p` print commands, separated
+# by `;`. No `s`, `w`, `e`, `r`, ... commands -- those can write or execute
+# arbitrary content, so any script that doesn't fully match this is rejected.
+SIMPLE_SED_SCRIPT_RE = re.compile(r"^\s*(?:(?:\d+|\$)(?:,(?:\d+|\$))?\s*p\s*;?\s*)+$")
+
 def describe_refs(refs: list[Reference]) -> str:
     accesses = []
     for file in sorted(r.text for r in refs if r.mode is Mode.READ):
@@ -166,6 +171,14 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
         else:
             return (Decision.ASK, f"The `podman` command is not allowed by default.")
+
+    if command.base == "sed":
+        if any(x.low_key not in ("-n", "--quiet", "--silent") for x in command.named_args):
+            return (Decision.ASK, f"`{command.base}` script is too complex; cannot verify it's read-only.")
+        if not command.positional_args or not SIMPLE_SED_SCRIPT_RE.match(command.positional_args[0].value or ""):
+            return (Decision.ASK, f"`{command.base}` script is too complex; cannot verify it's read-only.")
+        references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args[1:] if arg.value is not None]
+        return check_access(command, references, project_root)
 
     if command.base == "uv":
         if command.subcommand == "run" and len(command.positional_args) >= 2 and command.positional_args[1].low_value == "mypy":
