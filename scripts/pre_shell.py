@@ -150,6 +150,10 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, "The `npm --version` command is allowed.")
         if command.subcommand in ["ls", "view"]:
             return (Decision.ALLOW, f"The `npm {command.subcommand}` command is allowed.")
+        if command.subcommand == "audit":
+            if any(a.low_key == "--fix" or a.low_value == "fix" for a in command.args):
+                return (Decision.ASK, "The `npm audit fix` command is not allowed by default.")
+            return (Decision.ALLOW, "The `npm audit` command is allowed.")
         if command.subcommand:
             return (Decision.ASK, f"The `npm {command.subcommand}` command is not allowed by default.")
         else:

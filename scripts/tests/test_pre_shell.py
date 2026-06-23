@@ -279,6 +279,14 @@ def test_node_version_allowed(cmd):
 def test_npm_version_allowed(cmd):
     assert run(command=cmd) == "allow"
 
+@pytest.mark.parametrize("cmd", ["npm audit", "npm audit --json", "npm audit --production"])
+def test_npm_audit_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", ["npm audit fix", "npm audit --fix", "npm audit fix --force"])
+def test_npm_audit_fix_asks(cmd):
+    assert run(command=cmd) == "ask"
+
 def test_git_output_flag_without_value_does_not_crash():
     assert run(command="git show -o") == "deny"
 
