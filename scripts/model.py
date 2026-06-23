@@ -70,7 +70,9 @@ class Command:
 
     @property
     def base(self) -> str:
-        return os.path.basename(self.program).lower() if self.program else ""
+        if not self.program:
+            return ""
+        return os.path.basename(self.program).lower().removesuffix(".exe")
 
     @property
     def named_args(self) -> list[Argument]:

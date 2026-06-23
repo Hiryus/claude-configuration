@@ -77,12 +77,12 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return (Decision.DENY, "Do not use `pip`. Use `uv add`, `uv sync`, or `uvx` instead.")
     if command.base == "mypy":
         return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
-    if command.base.rstrip(".exe") in ["python", "python3"]:
+    if command.base in ["python", "python3"]:
         if any(x.low_key == "-m" for x in command.args):
             return (Decision.DENY, "Do not use `python -m`. Use `uv run` or `uvx` instead.")
         else:
             return (Decision.DENY, "Do not use python directly. Use `uv run python` instead.")
-    if command.base.rstrip(".exe") in ["bash", "cmd", "dash", "ksh", "powershell", "pwsh", "sh", "zsh"]:
+    if command.base in ["bash", "cmd", "dash", "ksh", "powershell", "pwsh", "sh", "zsh"]:
         return (Decision.DENY, "Do not invoke another shell. Run the command directly via Bash.")
     if re.search(r"(?i)\.venv[\\/].*python", command.program): # .venv
         return (Decision.DENY, "Do not call the venv python directly. Use `uv run` or `uvx` instead.")
@@ -104,7 +104,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
                 references.append(Reference(mode=Mode.READ, text=arg.value))
         return check_access(command, references, project_root)
 
-    if command.base.rstrip(".exe") == "git":
+    if command.base == "git":
         references = []
         if any(x.key == "-C" for x in command.args):
             return (Decision.DENY, "Do not use `git -C`: you are already at the repository root.")
@@ -129,7 +129,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
 
-    if command.base.rstrip(".exe") == "node":
+    if command.base == "node":
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `node --version` command is allowed.")
         if len(command.args) >= 1 and command.args[0].key == "--check":
@@ -140,7 +140,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         else:
             return (Decision.ASK, f"The `node` command is not allowed by default.")
 
-    if command.base.rstrip(".exe") == "npm":
+    if command.base == "npm":
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `npm --version` command is allowed.")
         if command.subcommand in ["ls", "view"]:
@@ -150,7 +150,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         else:
             return (Decision.ASK, f"The `npm` command is not allowed by default.")
 
-    if command.base.rstrip(".exe") == "podman":
+    if command.base == "podman":
         if command.subcommand == "compose":
             if len(command.args) >= 2 and command.args[1].value == "logs":
                 return (Decision.ALLOW, "The `podman compose logs` command is allowed.")
@@ -187,7 +187,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
 
     # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
     # No awk/sed: they can execute arbitrary programs.
-    if command.base in ["cat", "grep", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "uniq", "wc"]:
+    if command.base in ["cat", "grep", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "test", "uniq", "wc"]:
         references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 

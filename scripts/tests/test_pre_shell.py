@@ -133,6 +133,20 @@ def test_find_exec_asks():
     assert run(command="find . -exec rm {} ;") == "ask"
 
 # ============================================================================
+# test
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", ["test -f foo.txt", "test -e bar"])
+def test_test_command_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_test_command_secret_denied():
+    assert run(command="test -f .env") == "deny"
+
+def test_test_command_external_asks():
+    assert run(command="test -e /etc/passwd") == "ask"
+
+# ============================================================================
 # Dynamic / unknown / unparseable commands
 # ============================================================================
 
@@ -190,6 +204,18 @@ def test_git_output_external_asks():
 
 def test_git_output_secret_denied():
     assert run(command="git diff --output=.env") == "deny"
+
+# ============================================================================
+# .exe suffix stripping (base names ending in e/x, e.g. "node")
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", ["node --version", "node.exe --version"])
+def test_node_version_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", ["npm --version", "npm.exe --version"])
+def test_npm_version_allowed(cmd):
+    assert run(command=cmd) == "allow"
 
 def test_git_output_flag_without_value_does_not_crash():
     assert run(command="git show -o") == "deny"
