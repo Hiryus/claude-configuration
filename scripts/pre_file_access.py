@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from model import Decision
-from utils import expand_glob, format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
+from utils import expand_glob, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
 
 
 def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[Decision, str]:
@@ -22,7 +22,7 @@ def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[
             decision, reason = analyze(str(match), project_root, tool_name, mode)
             if decision is not Decision.ALLOW:
                 return (decision, reason)
-    elif not in_project(file_path, project_root) and not is_tmp_file(file_path, project_root):
+    elif not is_file_access_allowed(file_path, project_root, read=tool_name == "read"):
         return (Decision.ASK, f"Request accesses to '{file_path}' outside the project.")
 
     if tool_name == "read" or mode in ["acceptEdits", "auto", "bypassPermissions"]:

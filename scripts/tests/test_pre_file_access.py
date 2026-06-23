@@ -3,10 +3,13 @@
 import json
 import pytest
 
+from pathlib import Path
+
 from pre_file_access import main
 
 HOOK = "pre_file_access.py"
 ROOT = "C:\\proj"
+FAKE_HOME = r"C:\Users\fakeuser"
 
 # ============================================================================
 # Helpers
@@ -57,6 +60,24 @@ def test_outside_project_asks():
 
 def test_tmp_outside_project_allowed():
     assert run(file_path="/tmp/scratch.txt") == "allow"
+
+def test_read_claude_dir_allowed(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    path = str(Path(FAKE_HOME) / ".claude" / "settings.json")
+    assert run(file_path=path, tool_name="Read") == "allow"
+
+def test_write_claude_dir_asks(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    path = str(Path(FAKE_HOME) / ".claude" / "settings.json")
+    assert run(file_path=path, tool_name="Write") == "ask"
+
+def test_read_outside_claude_dir_still_asks(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    path = str(Path(FAKE_HOME) / "other" / "settings.json")
+    assert run(file_path=path, tool_name="Read") == "ask"
 
 # ============================================================================
 # Robustness

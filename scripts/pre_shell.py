@@ -6,7 +6,7 @@ from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
 from parser import ParseError, Parser
-from utils import expand_glob, format_response, has_glob, in_project, is_git_dir, is_secret, is_tmp_file
+from utils import expand_glob, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -68,7 +68,7 @@ def check_access(command: Command, references: list[Reference], project_root: Pa
         return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part - cannot verify it.")
     if glob_files := [r.text for r in expanded if has_glob(r.text)]:
         return (Decision.ASK, f"`{command.base}` uses a glob pattern ({', '.join(glob_files)}); cannot statically verify which files it matches.")
-    if external_files := [r.text for r in expanded if not in_project(r.text, project_root) and not is_tmp_file(r.text, project_root)]:
+    if external_files := [r.text for r in expanded if not is_file_access_allowed(r.text, project_root, read=r.mode is Mode.READ)]:
         return (Decision.ASK, f"`{command.base}` accesses {', '.join(external_files)} outside the project.")
     return (Decision.ALLOW, "")
 

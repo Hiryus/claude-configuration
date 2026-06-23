@@ -3,6 +3,8 @@
 import json
 import pytest
 
+from pathlib import Path
+
 from pre_shell import main
 
 HOOK = "pre_shell.py"
@@ -126,6 +128,29 @@ def test_write_outside_project_asks():
 
 def test_dev_null_redirect_allowed():
     assert run(command="echo x > /dev/null") == "allow"
+
+FAKE_HOME = r"C:\Users\fakeuser"
+
+def test_read_claude_dir_tilde_allowed(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    assert run(command="cat ~/.claude/settings.json") == "allow"
+
+def test_read_claude_dir_absolute_path_allowed(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    path = Path(FAKE_HOME) / ".claude" / "settings.json"
+    assert run(command=f'cat "{path}"') == "allow"
+
+def test_write_claude_dir_asks(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    assert run(command="echo x > ~/.claude/settings.json") == "ask"
+
+def test_read_outside_claude_dir_still_asks(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    assert run(command="cat ~/other/settings.json") == "ask"
 
 # ============================================================================
 # git

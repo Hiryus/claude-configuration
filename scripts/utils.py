@@ -98,6 +98,12 @@ def is_secret(path_text: str, project_root: Path) -> bool:
         return True
     return False
 
+def is_claude_dir(path_text: str, project_root: Path) -> bool:
+    path = standardize(path_text, project_root)
+    if not isinstance(path, Path):
+        return False
+    return path.is_relative_to(Path.home() / ".claude")
+
 def is_tmp_file(path_text: str, project_root: Path) -> bool:
     path = standardize(path_text, project_root)
     if sys.platform == "win32" and path.is_relative_to(Path(os.path.expandvars("%LOCALAPPDATA%\\Temp"))):
@@ -105,5 +111,19 @@ def is_tmp_file(path_text: str, project_root: Path) -> bool:
     if sys.platform == "win32" and path.is_relative_to(Path("C:\\Windows\\Temp")):
         return True
     if path.is_relative_to(PurePosixPath("/tmp")) or path.is_relative_to(PurePosixPath("/var/tmp")) or path.is_relative_to(PurePosixPath("/dev/null")):
+        return True
+    return False
+
+def is_file_access_allowed(path_text: str, project_root: Path, read: bool) -> bool:
+    """
+    True for locations that don't need to prompt the user for an
+    out-of-project access: inside the project, a tmp file, or (read-only)
+    inside ~/.claude.
+    """
+    if in_project(path_text, project_root):
+        return True
+    if is_tmp_file(path_text, project_root):
+        return True
+    if read and is_claude_dir(path_text, project_root):
         return True
     return False
