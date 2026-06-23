@@ -240,15 +240,18 @@ def analyze(prompt: str, project_root: Path) -> tuple[Decision, str]:
 
 def main(input_data:dict) -> str:
     try:
+        description: str = input_data.get("tool_input", {}).get("description", "")
         project_root = Path(input_data.get("cwd", ""))
         prompt: str = input_data.get("tool_input", {}).get("command")
         tool_name: str = input_data.get("tool_name", "")
-        if tool_name == "Bash":
-            decision, reason = analyze(prompt, project_root)
-            return format_response(decision.value, reason)
-        else:
-            reason = f"Tool `{tool_name}` is not allowed. Use the `Bash` tool instead."
-            return format_response(Decision.DENY.value, reason)
+
+        if tool_name != "Bash":
+            return format_response(Decision.DENY.value, f"Tool `{tool_name}` is not allowed. Use the `Bash` tool instead.")
+        if not description or not description.strip() or description.strip().lower() == "run shell command":
+            return format_response(Decision.DENY.value, "Provide a meaningful, specific `description` for this command, explaining why it is required and what it does.")
+
+        decision, reason = analyze(prompt, project_root)
+        return format_response(decision.value, reason)
     except ParseError as err:
         return format_response(Decision.DENY.value, f"Refusing to run an unparseable command: {err}")
 

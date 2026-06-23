@@ -12,13 +12,14 @@ ROOT = r"C:\proj"
 # Helpers
 # ============================================================================
 
-def run(command:str, tool_name="Bash", cwd=ROOT):
+def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description"):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
         "tool_name": tool_name,
         "tool_input": {
             "command": command,
+            "description": description,
         },
     })
     return json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision")
@@ -29,6 +30,26 @@ def run(command:str, tool_name="Bash", cwd=ROOT):
 
 def test_non_bash_tool_denied():
     assert run(command="ls", tool_name="Powershell") == "deny"
+
+# ============================================================================
+# Description quality
+# ============================================================================
+
+@pytest.mark.parametrize("description", ["Run shell command", "run shell command", "  Run shell command  ", ""])
+def test_default_description_denied(description):
+    assert run(command="ls", description=description) == "deny"
+
+def test_missing_description_denied():
+    result = main({
+        "cwd": ROOT,
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "ls"},
+    })
+    assert json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+
+def test_meaningful_description_allowed():
+    assert run(command="ls", description="List files in the current directory") == "allow"
 
 # ============================================================================
 # Read-only allow list
