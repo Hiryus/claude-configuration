@@ -200,7 +200,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
 
     # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
     # No awk/sed: they can execute arbitrary programs.
-    if command.base in ["cat", "grep", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "test", "uniq", "wc"]:
+    if command.base in ["cat", "file", "grep", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "test", "uniq", "wc"]:
         references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 

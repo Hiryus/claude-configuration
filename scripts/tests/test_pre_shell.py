@@ -81,6 +81,15 @@ def test_nested_shells_denied(cmd):
 def test_cat_secret_denied():
     assert run(command="cat .env") == "deny"
 
+def test_file_secret_denied():
+    assert run(command="file .env") == "deny"
+
+def test_file_allowed():
+    assert run(command="file foo.txt") == "allow"
+
+def test_file_outside_project_asks():
+    assert run(command="file /etc/passwd") == "ask"
+
 def test_redirect_into_secret_denied():
     assert run(command="echo x > .env") == "deny"
 
