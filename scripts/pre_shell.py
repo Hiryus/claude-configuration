@@ -148,7 +148,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
     if command.base == "npm":
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `npm --version` command is allowed.")
-        if command.subcommand in ["ls", "view"]:
+        if command.subcommand in ["ls", "outdated", "view"]:
             return (Decision.ALLOW, f"The `npm {command.subcommand}` command is allowed.")
         if command.subcommand == "audit":
             if any(a.low_key == "--fix" or a.low_value == "fix" for a in command.args):
