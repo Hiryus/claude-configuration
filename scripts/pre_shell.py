@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
-from parser import ParseError, Parser
+from parse_bash import ParseError, Parser
+from parse_grep import grep_references
 from utils import expand_glob, format_references, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
 
 # ============================================================================
@@ -134,6 +135,9 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
 
+    if command.base == "grep":
+        return check_access(command, grep_references(command), project_root)
+
     if command.base == "node":
         if len(command.args) == 1 and command.args[0].key in ("--version", "-v"):
             return (Decision.ALLOW, "The `node --version` command is allowed.")
@@ -171,7 +175,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
                 return (Decision.ALLOW, "The `podman compose ps` command is allowed.")
         if command.subcommand == "inspect":
             return (Decision.ALLOW, "The `podman inspect` command is allowed.")
-        if command.subcommand in ["logs", "ps"]:
+        if command.subcommand in ["logs", "port", "ps"]:
             return (Decision.ALLOW, f"The `podman {command.subcommand}` command is allowed.")
         if len(command.args) == 1 and command.args[0].key == "--version":
             return (Decision.ALLOW, "The `podman --version` command is allowed.")
@@ -208,7 +212,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
 
     # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
     # No awk/sed: they can execute arbitrary programs.
-    if command.base in ["cat", "file", "grep", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "test", "uniq", "wc"]:
+    if command.base in ["cat", "file", "head", "tail", "less", "more", "cut", "diff", "jq", "ls", "sort", "test", "uniq", "wc"]:
         references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 

@@ -189,6 +189,29 @@ def test_find_exec_asks():
     assert run(command="find . -exec rm {} ;") == "ask"
 
 # ============================================================================
+# grep
+# ============================================================================
+
+def test_grep_pattern_not_treated_as_path():
+    assert run(command="grep .env foo.txt") == "allow"
+
+def test_grep_file_secret_denied():
+    assert run(command="grep foo .env") == "deny"
+
+def test_grep_file_outside_project_asks():
+    assert run(command="grep foo /etc/passwd") == "ask"
+
+def test_grep_e_pattern_not_treated_as_path():
+    assert run(command="grep -e .env foo.txt") == "allow"
+
+def test_grep_file_value_flag_checked():
+    assert run(command="grep -f .env foo.txt") == "deny"
+
+@pytest.mark.parametrize("cmd", ["grep -A 3 foo bar.txt", "grep -m 1 foo bar.txt"])
+def test_grep_context_count_value_not_treated_as_path(cmd):
+    assert run(command=cmd) == "allow"
+
+# ============================================================================
 # test
 # ============================================================================
 
