@@ -135,7 +135,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
 
     if command.base == "node":
-        if len(command.args) == 1 and command.args[0].key == "--version":
+        if len(command.args) == 1 and command.args[0].key in ("--version", "-v"):
             return (Decision.ALLOW, "The `node --version` command is allowed.")
         if len(command.args) >= 1 and command.args[0].key == "--check":
             references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
@@ -146,7 +146,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ASK, f"The `node` command is not allowed by default.")
 
     if command.base == "npm":
-        if len(command.args) == 1 and command.args[0].key == "--version":
+        if len(command.args) == 1 and command.args[0].key in ("--version", "-v"):
             return (Decision.ALLOW, "The `npm --version` command is allowed.")
         if command.subcommand in ["ls", "outdated", "view"]:
             return (Decision.ALLOW, f"The `npm {command.subcommand}` command is allowed.")

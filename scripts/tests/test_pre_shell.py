@@ -296,11 +296,11 @@ def test_git_output_secret_denied():
 # .exe suffix stripping (base names ending in e/x, e.g. "node")
 # ============================================================================
 
-@pytest.mark.parametrize("cmd", ["node --version", "node.exe --version"])
+@pytest.mark.parametrize("cmd", ["node --version", "node.exe --version", "node -v", "node.exe -v"])
 def test_node_version_allowed(cmd):
     assert run(command=cmd) == "allow"
 
-@pytest.mark.parametrize("cmd", ["npm --version", "npm.exe --version"])
+@pytest.mark.parametrize("cmd", ["npm --version", "npm.exe --version", "npm -v", "npm.exe -v"])
 def test_npm_version_allowed(cmd):
     assert run(command=cmd) == "allow"
 
