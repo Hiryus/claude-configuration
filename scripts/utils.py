@@ -20,6 +20,15 @@ def format_response(decision: str, reason: str) -> str:
     })
 
 # ============================================================================
+# Formatting
+# ============================================================================
+
+def format_references(paths: list[str]) -> str:
+    # Wrap each path in backticks: a bare path is parsed as markdown when shown
+    # to the user, which strips backslashes as escape characters.
+    return ", ".join(f"`{path}`" for path in paths)
+
+# ============================================================================
 # Filesystem
 # ============================================================================
 

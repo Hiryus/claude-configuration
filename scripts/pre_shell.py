@@ -6,7 +6,7 @@ from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
 from parser import ParseError, Parser
-from utils import expand_glob, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
+from utils import expand_glob, format_references, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -37,9 +37,9 @@ SIMPLE_SED_SCRIPT_RE = re.compile(r"^\s*(?:(?:\d+|\$)(?:,(?:\d+|\$))?\s*p\s*;?\s
 def describe_refs(refs: list[Reference]) -> str:
     accesses = []
     for file in sorted(r.text for r in refs if r.mode is Mode.READ):
-        accesses.append(f"reads {file}")
+        accesses.append(f"reads {format_references([file])}")
     for file in sorted(r.text for r in refs if r.mode is Mode.WRITE):
-        accesses.append(f"writes {file}")
+        accesses.append(f"writes {format_references([file])}")
     return ", ".join(accesses)
 
 def check_access(command: Command, references: list[Reference], project_root: Path) -> tuple[Decision, str]:
@@ -61,15 +61,15 @@ def check_access(command: Command, references: list[Reference], project_root: Pa
             expanded.extend(Reference(mode=r.mode, text=str(m)) for m in matches)
     # Then apply ALLOW/ASK/DENY rules
     if secret_files := [r.text for r in expanded if is_secret(r.text, project_root)]:
-        return (Decision.DENY, f"Refusing to access {', '.join(secret_files)}: they look like secret files.")
+        return (Decision.DENY, f"Refusing to access {format_references(secret_files)}: they look like secret files.")
     if gitdir_files := [r.text for r in expanded if r.mode is Mode.WRITE and is_git_dir(r.text, project_root)]:
-        return (Decision.DENY, f"Refusing to write {', '.join(gitdir_files)} inside the .git directory.")
+        return (Decision.DENY, f"Refusing to write {format_references(gitdir_files)} inside the .git directory.")
     if command.dynamic:
         return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part - cannot verify it.")
     if glob_files := [r.text for r in expanded if has_glob(r.text)]:
-        return (Decision.ASK, f"`{command.base}` uses a glob pattern ({', '.join(glob_files)}); cannot statically verify which files it matches.")
+        return (Decision.ASK, f"`{command.base}` uses a glob pattern ({format_references(glob_files)}); cannot statically verify which files it matches.")
     if external_files := [r.text for r in expanded if not is_file_access_allowed(r.text, project_root, read=r.mode is Mode.READ)]:
-        return (Decision.ASK, f"`{command.base}` accesses {', '.join(external_files)} outside the project.")
+        return (Decision.ASK, f"`{command.base}` accesses {format_references(external_files)} outside the project.")
     return (Decision.ALLOW, "")
 
 def check_command(command: Command, references: list[Reference], project_root: Path, mode: str) -> tuple[Decision, str]:
