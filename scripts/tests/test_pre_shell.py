@@ -14,11 +14,12 @@ ROOT = r"C:\proj"
 # Helpers
 # ============================================================================
 
-def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description"):
+def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
         "tool_name": tool_name,
+        "permission_mode": mode,
         "tool_input": {
             "command": command,
             "description": description,
@@ -311,6 +312,13 @@ def test_npm_audit_allowed(cmd):
 @pytest.mark.parametrize("cmd", ["npm audit fix", "npm audit --fix", "npm audit fix --force"])
 def test_npm_audit_fix_asks(cmd):
     assert run(command=cmd) == "ask"
+
+def test_npm_prune_asks_in_default_mode():
+    assert run(command="npm prune") == "ask"
+
+@pytest.mark.parametrize("mode", ["acceptEdits", "auto", "bypassPermissions"])
+def test_npm_prune_allowed_in_write_modes(mode):
+    assert run(command="npm prune", mode=mode) == "allow"
 
 def test_git_output_flag_without_value_does_not_crash():
     assert run(command="git show -o") == "deny"

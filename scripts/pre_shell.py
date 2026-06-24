@@ -72,7 +72,7 @@ def check_access(command: Command, references: list[Reference], project_root: Pa
         return (Decision.ASK, f"`{command.base}` accesses {', '.join(external_files)} outside the project.")
     return (Decision.ALLOW, "")
 
-def check_command(command: Command, references: list[Reference], project_root: Path) -> tuple[Decision, str]:
+def check_command(command: Command, references: list[Reference], project_root: Path, mode: str) -> tuple[Decision, str]:
     """
     Command-specific checks: explicit denials and the allow-list classification.
     """
@@ -140,7 +140,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if len(command.args) >= 1 and command.args[0].key == "--check":
             references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
             return check_access(command, references, project_root)
-        if command.subcommand:
+        if command.subcommand and len(command.subcommand) <= 50:
             return (Decision.ASK, f"The `node {command.subcommand}` command is not allowed by default.")
         else:
             return (Decision.ASK, f"The `node` command is not allowed by default.")
@@ -150,6 +150,10 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ALLOW, "The `npm --version` command is allowed.")
         if command.subcommand in ["ls", "outdated", "view"]:
             return (Decision.ALLOW, f"The `npm {command.subcommand}` command is allowed.")
+        if command.subcommand == "prune":
+            if mode in ["acceptEdits", "auto", "bypassPermissions"]:
+                return (Decision.ALLOW, "The `npm prune` command is allowed.")
+            return (Decision.ASK, f"The `npm prune` command modifies node_modules; not allowed in {mode} mode.")
         if command.subcommand == "audit":
             if any(a.low_key == "--fix" or a.low_value == "fix" for a in command.args):
                 return (Decision.ASK, "The `npm audit fix` command is not allowed by default.")
@@ -217,7 +221,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return (Decision.ASK, f"`{command.base}` is not in the allow-list ({accesses}).")
     return (Decision.ASK, f"`{command.base}` is not in the allow-list.")
 
-def analyze(prompt: str, project_root: Path) -> tuple[Decision, str]:
+def analyze(prompt: str, project_root: Path, mode: str) -> tuple[Decision, str]:
     """
     Analyze every command in the prompt, then emit one aggregated decision.
     Each command's verdict is the most severe of its generic (file-access) and
@@ -229,7 +233,7 @@ def analyze(prompt: str, project_root: Path) -> tuple[Decision, str]:
             results.append((Decision.ALLOW, "Assignment is allowed."))
             continue
         references = referenced_paths(command)
-        verdicts = [check_access(command, references, project_root), check_command(command, references, project_root)]
+        verdicts = [check_access(command, references, project_root), check_command(command, references, project_root, mode)]
         results.append(max(verdicts, key=lambda verdict: list(Decision).index(verdict[0])))
 
     if denies := [reason for (decision, reason) in results if decision is Decision.DENY]:
@@ -248,13 +252,14 @@ def main(input_data:dict) -> str:
         project_root = Path(input_data.get("cwd", ""))
         prompt: str = input_data.get("tool_input", {}).get("command")
         tool_name: str = input_data.get("tool_name", "")
+        mode: str = input_data.get("permission_mode", "default")
 
         if tool_name != "Bash":
             return format_response(Decision.DENY.value, f"Tool `{tool_name}` is not allowed. Use the `Bash` tool instead.")
         if not description or not description.strip() or description.strip().lower() == "run shell command":
             return format_response(Decision.DENY.value, "Provide a meaningful, specific `description` for this command, explaining why it is required and what it does.")
 
-        decision, reason = analyze(prompt, project_root)
+        decision, reason = analyze(prompt, project_root, mode)
         return format_response(decision.value, reason)
     except ParseError as err:
         return format_response(Decision.DENY.value, f"Refusing to run an unparseable command: {err}")
