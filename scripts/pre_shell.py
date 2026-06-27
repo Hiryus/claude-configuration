@@ -131,6 +131,16 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if any(references):
             decision, reason = check_access(command, references, project_root)
             if decision != Decision.ALLOW: return decision, reason
+        if command.subcommand == "remote":
+            # No subcommand is allowed, including with --xxx modifyers
+            if len(command.positional_args) == 1:
+                return (Decision.ALLOW, f"The `git remote` command is allowed.")
+            # Read only subcommands are also ALLOWed
+            remote_subcommand = command.args[1].value if (len(command.args) >= 2 and command.args[1].key is None) else None
+            if remote_subcommand in ["show", "get-url"]:
+                return (Decision.ALLOW, f"The `git remote {remote_subcommand}` command is allowed.")
+            # Everything else is ASK
+            return (Decision.ASK, f"The `git remote {remote_subcommand}` command is not allowed by default.")
         if command.subcommand in ["add", "check-ignore", "commit", "diff", "grep", "hash-object", "log", "ls-files", "ls-tree", "merge-base", "rev-parse", "show", "status"]:
             return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
         return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")

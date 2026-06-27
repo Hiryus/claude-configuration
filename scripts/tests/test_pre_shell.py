@@ -167,6 +167,37 @@ def test_git_readonly_allowed(cmd):
 def test_git_unknown_subcommand_asks():
     assert run(command="git clone https://x") == "ask"
 
+@pytest.mark.parametrize("cmd", [
+    "git remote",
+    "git remote -v",
+    "git remote --verbose",
+    "git remote show origin",
+    "git remote get-url origin",
+])
+def test_git_remote_readonly_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "git remote add origin https://x",
+    "git remote remove origin",
+    "git remote rm origin",
+    "git remote set-url origin https://x",
+    "git remote rename origin upstream",
+    "git remote prune origin",
+    "git remote update",
+    "git remote set-head origin main",
+])
+def test_git_remote_write_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "git remote --flag show prune",
+    "git remote --flag=show prune",
+    "git remote --verbose prune",
+])
+def test_git_remote_write_hidden_behind_flag_asks(cmd):
+    assert run(command=cmd) == "ask"
+
 # ============================================================================
 # uv
 # ============================================================================
