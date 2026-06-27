@@ -97,6 +97,9 @@ def check_command(command: Command, references: list[Reference], project_root: P
         references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 
+    if command.base == "composer":
+        return (Decision.DENY, f"The `composer` command is not installed. Use a podman container instead.")
+
     if command.base == "find":
         for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
             if any(x.low_key == arg for x in command.args):
@@ -117,7 +120,9 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if any(x.key == "-c" for x in command.args):
             return (Decision.DENY, "Do not use `git -c` to inject config; it can run arbitrary code. Run the command directly.")
         if command.subcommand == "push":
-            return (Decision.DENY, "`git push` is forbidden by the security policy: only the user is allowed to push.")
+            if any(arg.key in ["-f", "--force"] for arg in command.args):
+                return (Decision.DENY, "`git push --force` is forbidden by the security policy: only the user is allowed to use it.")
+            return (Decision.ASK, "`git push` requires the user validation.")
         for idx, arg in enumerate(command.args):
             if arg.low_key in ["--output", "-o"]:
                 if not arg.value and len(command.args) <= idx + 1:
@@ -176,6 +181,9 @@ def check_command(command: Command, references: list[Reference], project_root: P
             return (Decision.ASK, f"The `npm {command.subcommand}` command is not allowed by default.")
         else:
             return (Decision.ASK, f"The `npm` command is not allowed by default.")
+
+    if command.base == "php":
+        return (Decision.DENY, f"The `php` command is not installed. Use a podman container instead.")
 
     if command.base == "podman":
         if command.subcommand == "compose":
