@@ -113,12 +113,19 @@ def check_command(command: Command, references: list[Reference], project_root: P
                 references.append(Reference(mode=Mode.READ, text=arg.value))
         return check_access(command, references, project_root)
 
+    if command.base == "gh":
+        return (Decision.DENY, f"The `gh` command is not installed. Use the github MCP instead.")
+
     if command.base == "git":
         references = []
         if any(x.key == "-C" for x in command.args):
             return (Decision.DENY, "Do not use `git -C`: you are already at the repository root.")
         if any(x.key == "-c" for x in command.args):
             return (Decision.DENY, "Do not use `git -c` to inject config; it can run arbitrary code. Run the command directly.")
+        if command.subcommand == "branch":
+            if any(arg.key not in ["--color", "--no-color", "--show-current", "-v", "--abbrev", "--no-abbrev", "--column", "--no-column", "--sort=<key>", "--merged", "--no-merged", "--contains", "--no-contains", "--points-at", "--format", "-r", "--remotes", "-a", "--all", "--list"] for arg in command.args):
+                return (Decision.ASK, "`git branch` requires the user validation.")
+            return (Decision.ALLOW, "`git branch` is allowed by default.")
         if command.subcommand == "push":
             if any(arg.key in ["-f", "--force"] for arg in command.args):
                 return (Decision.DENY, "`git push --force` is forbidden by the security policy: only the user is allowed to use it.")
