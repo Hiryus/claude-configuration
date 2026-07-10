@@ -7,7 +7,17 @@
       "mcp__github__list_pull_requests",
       "mcp__github__search_pull_requests",
       "WebSearch"
+    ],
+    "deny": [
+      "Edit(.env)",
+      "Read(.env)",
+      "Write(.env)"
     ]
+  },
+  "model": "sonnet",
+  "env": {
+    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "1800000",
+    "API_TIMEOUT_MS": "1800000"
   },
   "hooks": {
     "PreToolUse": [
@@ -39,12 +49,10 @@
   "effortLevel": "high",
   "advisorModel": "opus",
   "autoUpdatesChannel": "latest",
-  "tui": "fullscreen",
   "voice": {
     "enabled": false,
     "mode": "hold"
   },
   "theme": "dark",
-  "voiceEnabled": false,
-  "model": "opus"
+  "voiceEnabled": false
 }
