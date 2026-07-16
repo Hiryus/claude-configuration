@@ -12,5 +12,6 @@ Run tests with `uv run --with bashlex --with pytest pytest scripts/tests`.
 
 ## Useful links
 
+- [Official Claude Code documentation for settings](https://code.claude.com/docs/en/settings#available-settings)
 - [Claude Code — Complete settings.json Reference](https://gist.github.com/mculp/c082bd1e5a439410158974de90c89db7)
 - [How To Kill The Bloat In Claude Code's System Prompt](https://www.aihero.dev/how-to-kill-the-bloat-in-claude-codes-system-prompt)

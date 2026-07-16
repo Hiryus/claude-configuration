@@ -5,14 +5,16 @@
     "pr": ""
   },
   "autoUpdatesChannel": "latest",
+  "awaySummaryEnabled": false,
   "defaultShell": "bash",
   "disableAutoMode": "disable",
   "disableArtifact": true,
-  "disableBypassPermissionsMode": true,
   "disableClaudeAiConnectors": true,
   "disableRemoteControl": true,
+  "disableSkillShellExecution": true,
   "disableWorkflows": true,
   "effortLevel": "high",
+  "editorMode": "normal",
   "enabledPlugins": {},
   "env": {
     "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "600000",
@@ -49,6 +51,7 @@
       "mcp__github__search_pull_requests",
       "WebSearch"
     ],
+    "defaultMode": "default",
     "deny": [
       "AskUserQuestion",
       "CronCreate",
@@ -65,16 +68,21 @@
       "PushNotification",
       "RemoteTrigger",
       "Read(.env)"
-    ]
+    ],
+    "disableBypassPermissionsMode": "disable"
   },
   "spinnerTipsEnabled": false,
+  "showThinkingSummaries": true,
   "statusLine": {
     "type": "command",
     "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '${USERPROFILE}\\.claude\\scripts\\statusline_command.ps1'\""
   },
   "theme": "dark",
   "voice": {
+    "autoSubmit": false,
     "enabled": false,
     "mode": "hold"
-  }
+  },
+  "wheelScrollAccelerationEnabled": false,
+  "workflowKeywordTriggerEnabled": false
 }
