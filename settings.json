@@ -1,23 +1,22 @@
 {
-  "permissions": {
-    "allow": [
-      "mcp__github__list_issues",
-      "mcp__github__pull_request_read",
-      "mcp__github__issue_read",
-      "mcp__github__list_pull_requests",
-      "mcp__github__search_pull_requests",
-      "WebSearch"
-    ],
-    "deny": [
-      "Edit(.env)",
-      "Read(.env)",
-      "Write(.env)"
-    ]
+  "advisorModel": "opus",
+  "attribution": {
+    "commit": "",
+    "pr": ""
   },
-  "model": "sonnet",
+  "autoUpdatesChannel": "latest",
+  "defaultShell": "bash",
+  "disableAutoMode": "disable",
+  "disableArtifact": true,
+  "disableBypassPermissionsMode": true,
+  "disableClaudeAiConnectors": true,
+  "disableRemoteControl": true,
+  "disableWorkflows": true,
+  "effortLevel": "high",
+  "enabledPlugins": {},
   "env": {
-    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "1800000",
-    "API_TIMEOUT_MS": "1800000"
+    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "600000",
+    "API_TIMEOUT_MS": "600000"
   },
   "hooks": {
     "PreToolUse": [
@@ -41,18 +40,41 @@
       }
     ]
   },
+  "permissions": {
+    "allow": [
+      "mcp__github__list_issues",
+      "mcp__github__pull_request_read",
+      "mcp__github__issue_read",
+      "mcp__github__list_pull_requests",
+      "mcp__github__search_pull_requests",
+      "WebSearch"
+    ],
+    "deny": [
+      "AskUserQuestion",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "DesignSync",
+      "Edit(.env)",
+      "EnterPlanMode",
+      "EnterWorktree",
+      "ExitPlanMode",
+      "ExitWorktree",
+      "NotebookEdit",
+      "PowerShell",
+      "PushNotification",
+      "RemoteTrigger",
+      "Read(.env)"
+    ]
+  },
+  "spinnerTipsEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '${USERPROFILE}\\.claude\\scripts\\statusline-command.ps1'\""
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '${USERPROFILE}\\.claude\\scripts\\statusline_command.ps1'\""
   },
-  "enabledPlugins": {},
-  "effortLevel": "high",
-  "advisorModel": "opus",
-  "autoUpdatesChannel": "latest",
+  "theme": "dark",
   "voice": {
     "enabled": false,
     "mode": "hold"
-  },
-  "theme": "dark",
-  "voiceEnabled": false
+  }
 }
