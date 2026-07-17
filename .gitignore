@@ -10,6 +10,7 @@ daemon.status.json
 
 backups/
 cache/
+chrome/
 daemon/
 debug/
 downloads/

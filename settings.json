@@ -1,25 +1,42 @@
 {
-  "advisorModel": "opus",
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  },
-  "autoUpdatesChannel": "latest",
-  "awaySummaryEnabled": false,
-  "defaultShell": "bash",
-  "disableAutoMode": "disable",
-  "disableArtifact": true,
-  "disableClaudeAiConnectors": true,
-  "disableRemoteControl": true,
-  "disableSkillShellExecution": true,
-  "disableWorkflows": true,
-  "effortLevel": "high",
-  "editorMode": "normal",
-  "enabledPlugins": {},
   "env": {
     "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "600000",
     "API_TIMEOUT_MS": "600000"
   },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "mcp__github__list_issues",
+      "mcp__github__pull_request_read",
+      "mcp__github__issue_read",
+      "mcp__github__list_pull_requests",
+      "mcp__github__search_pull_requests",
+      "WebSearch"
+    ],
+    "deny": [
+      "AskUserQuestion",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "DesignSync",
+      "Edit(.env)",
+      "EnterPlanMode",
+      "EnterWorktree",
+      "ExitPlanMode",
+      "ExitWorktree",
+      "NotebookEdit",
+      "PowerShell",
+      "PushNotification",
+      "RemoteTrigger",
+      "Read(.env)"
+    ],
+    "defaultMode": "default",
+    "disableBypassPermissionsMode": "disable"
+  },
+  "disableClaudeAiConnectors": true,
   "hooks": {
     "PreToolUse": [
       {
@@ -42,47 +59,31 @@
       }
     ]
   },
-  "permissions": {
-    "allow": [
-      "mcp__github__list_issues",
-      "mcp__github__pull_request_read",
-      "mcp__github__issue_read",
-      "mcp__github__list_pull_requests",
-      "mcp__github__search_pull_requests",
-      "WebSearch"
-    ],
-    "defaultMode": "default",
-    "deny": [
-      "AskUserQuestion",
-      "CronCreate",
-      "CronDelete",
-      "CronList",
-      "DesignSync",
-      "Edit(.env)",
-      "EnterPlanMode",
-      "EnterWorktree",
-      "ExitPlanMode",
-      "ExitWorktree",
-      "NotebookEdit",
-      "PowerShell",
-      "PushNotification",
-      "RemoteTrigger",
-      "Read(.env)"
-    ],
-    "disableBypassPermissionsMode": "disable"
-  },
-  "spinnerTipsEnabled": false,
-  "showThinkingSummaries": true,
+  "disableRemoteControl": true,
+  "disableWorkflows": true,
+  "disableArtifact": true,
+  "workflowKeywordTriggerEnabled": false,
+  "disableSkillShellExecution": true,
+  "defaultShell": "bash",
   "statusLine": {
     "type": "command",
-    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '${USERPROFILE}\\.claude\\scripts\\statusline_command.ps1'\""
+    "command": "python $USERPROFILE/.claude/scripts/statusline_command.py"
   },
-  "theme": "dark",
+  "enabledPlugins": {},
+  "spinnerTipsEnabled": false,
+  "effortLevel": "high",
+  "advisorModel": "opus",
+  "awaySummaryEnabled": false,
+  "autoUpdatesChannel": "latest",
   "voice": {
-    "autoSubmit": false,
     "enabled": false,
-    "mode": "hold"
+    "mode": "hold",
+    "autoSubmit": false
   },
+  "showThinkingSummaries": true,
+  "disableAutoMode": "disable",
+  "theme": "dark",
+  "editorMode": "normal",
   "wheelScrollAccelerationEnabled": false,
-  "workflowKeywordTriggerEnabled": false
+  "tui": "fullscreen"
 }
