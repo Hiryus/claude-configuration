@@ -7,9 +7,9 @@ Personal configuration and scripts for claude code.
 ├─ agents/                    - the agents definitions
 ├─ commands/                  - the commands definitions
 └─ scripts/                   - the agents definitions
-   ├─ statusline_command.ps1 - the script rendering the status bar in claude code
-   ├─ pre_file_access.py     - a (too) complex script to control and secure bash calls
-   └─ pre_shell.py           - a script to control and secure files access from the Read/Edit/Write tools
+   ├─ statusline_command.ps1 - a script rendering the status bar in claude code
+   ├─ pre_file_access.py     - a script to control and secure files access from the Read/Edit/Write tools
+   └─ pre_shell.py           - a (too) complex script to control and secure bash calls
 ```
 
 ## Requirements
