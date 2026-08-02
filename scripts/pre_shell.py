@@ -1,13 +1,20 @@
 import json
 import re
 import sys
-
 from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
 from parse_bash import ParseError, Parser
 from parse_grep import grep_references
-from utils import expand_glob, format_references, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
+from utils import (
+    expand_glob,
+    format_references,
+    format_response,
+    has_glob,
+    is_file_access_allowed,
+    is_git_dir,
+    is_secret,
+)
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -97,9 +104,6 @@ def check_command(command: Command, references: list[Reference], project_root: P
         references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
         return check_access(command, references, project_root)
 
-    if command.base == "composer":
-        return (Decision.DENY, f"The `composer` command is not installed. Use a podman container instead.")
-
     if command.base == "find":
         for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
             if any(x.low_key == arg for x in command.args):
@@ -114,7 +118,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return check_access(command, references, project_root)
 
     if command.base == "gh":
-        return (Decision.DENY, f"The `gh` command is not installed. Use the github MCP instead.")
+        return (Decision.DENY, "The `gh` command is not installed. Use the github MCP instead.")
 
     if command.base == "git":
         references = []
@@ -146,7 +150,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if command.subcommand == "remote":
             # No subcommand is allowed, including with --xxx modifyers
             if len(command.positional_args) == 1:
-                return (Decision.ALLOW, f"The `git remote` command is allowed.")
+                return (Decision.ALLOW, "The `git remote` command is allowed.")
             # Read only subcommands are also ALLOWed
             remote_subcommand = command.args[1].value if (len(command.args) >= 2 and command.args[1].key is None) else None
             if remote_subcommand in ["show", "get-url"]:
@@ -169,7 +173,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if command.subcommand and len(command.subcommand) <= 50:
             return (Decision.ASK, f"The `node {command.subcommand}` command is not allowed by default.")
         else:
-            return (Decision.ASK, f"The `node` command is not allowed by default.")
+            return (Decision.ASK, "The `node` command is not allowed by default.")
 
     if command.base == "npm":
         if len(command.args) == 1 and command.args[0].key in ("--version", "-v"):
@@ -187,10 +191,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if command.subcommand:
             return (Decision.ASK, f"The `npm {command.subcommand}` command is not allowed by default.")
         else:
-            return (Decision.ASK, f"The `npm` command is not allowed by default.")
-
-    if command.base == "php":
-        return (Decision.DENY, f"The `php` command is not installed. Use a podman container instead.")
+            return (Decision.ASK, "The `npm` command is not allowed by default.")
 
     if command.base == "podman":
         if command.subcommand == "compose":
@@ -207,7 +208,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if command.subcommand:
             return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
         else:
-            return (Decision.ASK, f"The `podman` command is not allowed by default.")
+            return (Decision.ASK, "The `podman` command is not allowed by default.")
 
     if command.base == "sed":
         if any(x.low_key not in ("-n", "--quiet", "--silent") for x in command.named_args):
@@ -233,7 +234,7 @@ def check_command(command: Command, references: list[Reference], project_root: P
         if command.subcommand:
             return (Decision.ASK, f"The `uv {command.subcommand}` command is not allowed by default.")
         else:
-            return (Decision.ASK, f"The `uv` command is not allowed by default.")
+            return (Decision.ASK, "The `uv` command is not allowed by default.")
 
     # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
     # No awk/sed: they can execute arbitrary programs.
@@ -297,5 +298,5 @@ if __name__ == "__main__":
     try:
         input_data: dict = json.loads(sys.stdin.read())
         print(main(input_data))
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001
         print(format_response(Decision.DENY.value, f"Hook error, denying for safety: {err}"))
