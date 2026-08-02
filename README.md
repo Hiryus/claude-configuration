@@ -1,10 +1,16 @@
-Personal configuraiton and scripts for claude code.
+Personal configuration and scripts for claude code.
 
-The main files are:
 * `setings.json` - the claude code central configuration,
+* `agents/` - the agents definitions,
+* `commands/` - the commands definitions,
+* `scripts/` - the agents definitions,
 * `scripts/statusline_command.ps1` - the script rendering the status bar in claude code,
 * `scripts/pre_file_access.py` - a (too) complex script to control and secure bash calls,
 * `scripts/pre_shell.py` - a script to control and secure files access from the Read/Edit/Write tools.
+
+## Requirements
+
+* The [uv command](https://docs.astral.sh/uv/getting-started/installation/) installed and in the PATH.
 
 ## Scripts tests
 
