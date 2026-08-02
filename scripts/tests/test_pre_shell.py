@@ -2,13 +2,14 @@
 
 import json
 import pytest
+import sys
 
 from pathlib import Path
 
 from pre_shell import main
 
 HOOK = "pre_shell.py"
-ROOT = r"C:\proj"
+ROOT = "/proj"
 
 # ============================================================================
 # Helpers
@@ -70,7 +71,6 @@ def test_assignment_only_allowed():
 # ============================================================================
 
 @pytest.mark.parametrize("cmd", [
-    "git push",
     "pip install x",
     "python script.py",
     "python -m http.server",
@@ -130,7 +130,7 @@ def test_write_outside_project_asks():
 def test_dev_null_redirect_allowed():
     assert run(command="echo x > /dev/null") == "allow"
 
-FAKE_HOME = r"C:\Users\fakeuser"
+FAKE_HOME = "/home/fakeuser"
 
 def test_read_claude_dir_tilde_allowed(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
@@ -166,6 +166,13 @@ def test_git_readonly_allowed(cmd):
 
 def test_git_unknown_subcommand_asks():
     assert run(command="git clone https://x") == "ask"
+
+def test_git_push_asks():
+    assert run(command="git push") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git push --force", "git push -f"])
+def test_git_push_force_denied(cmd):
+    assert run(command=cmd) == "deny"
 
 @pytest.mark.parametrize("cmd", [
     "git remote",
@@ -388,7 +395,7 @@ def test_uv_run_python_version_allowed():
 # Case-sensitive command matching
 # ============================================================================
 
-@pytest.mark.parametrize("cmd", ["PIP install x", "Python evil.py", "GIT push"])
+@pytest.mark.parametrize("cmd", ["PIP install x", "Python evil.py", "GIT push --force"])
 def test_uppercase_denied_commands_still_denied(cmd):
     assert run(command=cmd) == "deny"
 
@@ -412,7 +419,7 @@ def test_readonly_command_secret_disclosure_denied(cmd):
     "cat .en?",     # expands to .env
 ])
 def test_glob_read_in_nonexistent_project_allowed(cmd):
-    # ROOT ("C:\proj") doesn't exist on disk: there's nothing real for a
+    # ROOT ("/proj") doesn't exist on disk: there's nothing real for a
     # read to disclose, regardless of what the pattern would expand to.
     assert run(command=cmd) == "allow"
 
@@ -429,6 +436,7 @@ def test_glob_write_in_nonexistent_project_still_asks():
 def test_external_access_via_allowed_command_not_allowed(cmd):
     assert run(command=cmd) != "allow"
 
+@pytest.mark.skipif(sys.platform != "win32", reason="trailing-dot stripping is a Windows-only filesystem quirk")
 def test_trailing_dot_secret_not_allowed():
     # Windows strips a trailing dot, so `.env.` opens `.env`.
     assert run(command="cat .env.") != "allow"

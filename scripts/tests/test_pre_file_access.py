@@ -8,8 +8,8 @@ from pathlib import Path
 from pre_file_access import main
 
 HOOK = "pre_file_access.py"
-ROOT = "C:\\proj"
-FAKE_HOME = r"C:\Users\fakeuser"
+ROOT = "/proj"
+FAKE_HOME = "/home/fakeuser"
 
 # ============================================================================
 # Helpers
@@ -30,12 +30,12 @@ def run(file_path:str, tool_name="Read", cwd=ROOT):
 # Secrets
 # ============================================================================
 
-@pytest.mark.parametrize("file_path", ["C:\\proj\\.env", "C:\\proj\\config\\.env.local", "C:\\proj\\server.pem", "C:\\proj\\id_rsa"])
+@pytest.mark.parametrize("file_path", ["/proj/.env", "/proj/config/.env.local", "/proj/server.pem", "/proj/id_rsa"])
 def test_secret_files_denied(file_path):
     assert run(file_path=file_path) == "deny"
 
 def test_env_example_is_not_secret():
-    assert run(file_path="C:\\proj\\.env.example") == "allow"
+    assert run(file_path="/proj/.env.example") == "allow"
 
 # ============================================================================
 # Git files
@@ -43,20 +43,20 @@ def test_env_example_is_not_secret():
 
 @pytest.mark.parametrize("tool", ["Write", "Edit"])
 def test_git_dir_writes_denied(tool):
-    assert run(file_path="C:\\proj\\.git\\config", tool_name=tool) == "deny"
+    assert run(file_path="/proj/.git/config", tool_name=tool) == "deny"
 
 def test_git_dir_read_allowed():
-    assert run(file_path="C:\\proj\\.git\\config", tool_name="Read") == "allow"
+    assert run(file_path="/proj/.git/config", tool_name="Read") == "allow"
 
 # ============================================================================
 # Project location
 # ============================================================================
 
 def test_in_project_allowed():
-    assert run(file_path="C:\\proj\\src\\main.py") == "allow"
+    assert run(file_path="/proj/src/main.py") == "allow"
 
 def test_outside_project_asks():
-    assert run(file_path="C:\\other\file.txt") == "ask"
+    assert run(file_path="/other/file.txt") == "ask"
 
 def test_tmp_outside_project_allowed():
     assert run(file_path="/tmp/scratch.txt") == "allow"
@@ -97,29 +97,29 @@ def test_missing_file_path_denied_for_safety():
 # ============================================================================
 
 def test_secret_in_subdir_denied():
-    assert run(file_path="C:\\proj\\sub\\.env") == "deny"
+    assert run(file_path="/proj/sub/.env") == "deny"
 
 def test_ssh_key_denied():
-    assert run(file_path="~\\.ssh\\id_ed25519") == "deny"
+    assert run(file_path="~/.ssh/id_ed25519") == "deny"
 
 def test_pem_example_is_not_secret():
-    assert run(file_path="C:\\proj\\a.pem.example") == "allow"
+    assert run(file_path="/proj/a.pem.example") == "allow"
 
 @pytest.mark.parametrize("tool", ["MultiEdit", "NotebookEdit"])
 def test_git_dir_other_writes_denied(tool):
-    assert run(file_path="C:\\proj\\.git\\config", tool_name=tool) == "deny"
+    assert run(file_path="/proj/.git/config", tool_name=tool) == "deny"
 
 # ============================================================================
 # Glob patterns
 # ============================================================================
 
-@pytest.mark.parametrize("file_path", ["C:\\proj\\*", "C:\\proj\\.e*", "C:\\proj\\src\\?.py"])
+@pytest.mark.parametrize("file_path", ["/proj/*", "/proj/.e*", "/proj/src/?.py"])
 def test_glob_path_in_nonexistent_project_read_allowed(file_path):
-    # ROOT ("C:\proj") doesn't exist on disk: nothing real could be disclosed,
+    # ROOT ("/proj") doesn't exist on disk: nothing real could be disclosed,
     # so a read is allowed even though expansion can't be verified.
     assert run(file_path=file_path, tool_name="Read") == "allow"
 
-@pytest.mark.parametrize("file_path", ["C:\\proj\\*", "C:\\proj\\.e*", "C:\\proj\\src\\?.py"])
+@pytest.mark.parametrize("file_path", ["/proj/*", "/proj/.e*", "/proj/src/?.py"])
 def test_glob_path_in_nonexistent_project_write_asks(file_path):
     assert run(file_path=file_path, tool_name="Write") == "ask"
 
