@@ -36,6 +36,7 @@
     "defaultMode": "default",
     "disableBypassPermissionsMode": "disable"
   },
+  "model": "sonnet",
   "disableClaudeAiConnectors": true,
   "hooks": {
     "PreToolUse": [
@@ -44,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --with bashlex python ${USERPROFILE}/.claude/scripts/pre_shell.py"
+            "command": "uv run --with bashlex python ~/.claude/scripts/pre_shell.py"
           }
         ]
       },
@@ -53,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python ${USERPROFILE}/.claude/scripts/pre_file_access.py"
+            "command": "uv run python ~/.claude/scripts/pre_file_access.py"
           }
         ]
       }
@@ -67,7 +68,7 @@
   "defaultShell": "bash",
   "statusLine": {
     "type": "command",
-    "command": "python $USERPROFILE/.claude/scripts/statusline_command.py"
+    "command": "uv run python ~/.claude/scripts/statusline_command.py"
   },
   "enabledPlugins": {},
   "spinnerTipsEnabled": false,
@@ -75,15 +76,15 @@
   "advisorModel": "opus",
   "awaySummaryEnabled": false,
   "autoUpdatesChannel": "latest",
+  "tui": "default",
   "voice": {
     "enabled": false,
     "mode": "hold",
     "autoSubmit": false
   },
+  "autoMemoryEnabled": false,
   "showThinkingSummaries": true,
-  "disableAutoMode": "disable",
   "theme": "dark",
   "editorMode": "normal",
-  "wheelScrollAccelerationEnabled": false,
-  "tui": "fullscreen"
+  "wheelScrollAccelerationEnabled": false
 }
