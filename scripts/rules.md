@@ -9,25 +9,36 @@ In **auto mode**, any `ask` is converted to a `deny`, so any rule below that dep
 
 ## File rules
 
-- The agent is allowed to **read** any file in the current project, in any temp directory (`/tmp`, `/var/tmp`, the Windows temp folders), and read-only inside the harness folder (`~/.claude`, including subfolders), with the exception of files containing credentials (`.env`, ssh keys, etc.) which are always denied, even inside the project.
-- The agent is allowed to **write** to the same locations (project and temp directories) in **edit mode**, with the same exceptions, plus: writing anywhere under a `.git` directory is always denied, even outside those exceptions (reading `.git` files is fine). The harness folder is read-only -- writes there always ask.
-- A path that looks like a glob pattern (`*`, `?`, `[`, `{`, `(`) is expanded against the real filesystem when possible; each match is checked with the same rules. If the pattern can't be safely expanded (e.g. it uses brace/extglob syntax bash would expand but Python's glob won't), the request asks instead of guessing.
+- The agent is **denied** to _access_ (read and write) files containing credentials, whatever their location, including:
+  * Files with the `.pem`/`.key`/`.p12`/`.pfx`/`.keystore`/`.jks`, `.htpasswd`/`.netrc`/`.npmrc`/`.pgpass` extensions,
+  * The dotenv (`.env`/`.env.local`/`.env.production`) and usual ssh key (`id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`) files,
+  * Any files under `.ssh/`.
+  Template files (`.example`, `.sample`, `.template` suffix) are exempted from this rule.
+- The agent is **denied** to _wite_ file in the following locations, including subfolders:
+  * Any `.git` directory,
+  * The harness directory (`~/.claude`).
+- The agent is **allowed** to _read_ file in the following locations, including subfolders (with exceptions listed above):
+  * The current project,
+  * The temporary directories (`/tmp`, `/var/tmp`, etc.),
+  * The harness directory (`~/.claude`).
+- In **edit mode**, the agent is **allowed** to _write_ files in the following locations, including subfolders (with exceptions listed above):
+  * The current project,
+  * The temporary directories (`/tmp`, `/var/tmp`, etc.).
 
 ## Bash rules
 
-Every Bash call must carry a meaningful, specific `description` explaining why the command is needed -- an empty description or the literal default ("run shell command") is always denied, before anything else is checked.
+- A command line that does not carry a meaningful `description` explaining why the command is needed is **denied**.
+- The command line is parsed into individual commands (handling pipes, `&&`, subshells, command substitutions, etc.). Each below rule is then checked against these individual commands. The overall decision for the line is the worst (`deny` > `ask` > `allow`) across all of its commands.
+- A bare variable assignment (`FOO=bar`) is **allowed**.
+- 
+via a redirect (`>`, `>>`, `>|`, `&>`, `&>>` count as a write; `<`, `<>`, `<<<` count as a read -- fd-dups like `2>&1` and `/dev/null` targets are ignored
+Each match is checked with the [File rules](#file-rules).
+- A path that looks like a glob pattern (`*`, `?`, `[`, `{`, `(`) is expanded against the real filesystem when possible. Each match is checked with the [File rules](#file-rules).
 
-The full command line is parsed into individual commands (handling pipes, `&&`, subshells, command substitutions, etc.). A bare variable assignment (`FOO=bar`) is always allowed. If any command's program, argument, or redirect target is built from a substitution or expansion (`$(...)`, `` `...` ``, `$VAR`, arithmetic, ...) -- other than a leading `~` -- the whole command is "dynamic" and asks, since its real target can't be verified statically. The overall decision for the line is the worst (`deny` > `ask` > `allow`) across all of its commands.
-
-### File-access checks (apply to every path a command touches)
+If any command's program, argument, or redirect target is built from a substitution or expansion (`$(...)`, `` `...` ``, `$VAR`, arithmetic, ...) -- other than a leading `~` -- the whole command is "dynamic" and asks, since its real target can't be verified statically. 
 
 A command can reference a path either via a redirect (`>`, `>>`, `>|`, `&>`, `&>>` count as a write; `<`, `<>`, `<<<` count as a read -- fd-dups like `2>&1` and `/dev/null` targets are ignored) or via the arguments a given command is known to read/write (see the per-command list below). Every such reference is checked, in order:
 
-1. A path that looks like a secret -- `.pem`/`.key`/`.p12`/`.pfx`/`.keystore`/`.jks`, `.env`/`.env.local`, `.htpasswd`/`.netrc`/`.npmrc`/`.pgpass`, anything under `.ssh/`, or an `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519` key file -- is always denied, unless it's a template (`.example`, `.sample`, `.template`, `.dist` suffix). Note: this only matches `.env` and `.env.local` exactly, so `.env.production` slips through; `.gitignore` is not caught by the `.git` rule below since that only matches a whole `.git` path component.
-2. Writing anywhere under a `.git` directory is denied.
-3. A glob pattern that can't be safely expanded asks.
-4. A path outside the project and outside a temp directory asks -- unless it's a read inside `~/.claude`, which is allowed.
-5. Otherwise, allowed.
 
 ### Toolchain rules (deny with a preferred alternative)
 
