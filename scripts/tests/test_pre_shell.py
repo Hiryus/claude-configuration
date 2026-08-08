@@ -164,6 +164,37 @@ def test_redirect_into_git_denied():
 def test_git_readonly_allowed(cmd):
     assert run(command=cmd) == "allow"
 
+def test_git_branch_bare_allowed():
+    assert run(command="git branch") == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "git branch --list",
+    "git branch -a",
+    "git branch --all",
+    "git branch -r",
+    "git branch -v",
+    "git branch --show-current",
+    "git branch --no-color --list",
+])
+def test_git_branch_readonly_flags_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "git branch foo",             # creates a branch
+    "git branch -d foo",          # deletes a branch
+    "git branch -D foo",          # force-deletes a branch
+    "git branch -m old new",      # renames a branch
+    "git branch --edit-description",
+])
+def test_git_branch_write_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", ["git branch --contains HEAD", "git branch --points-at HEAD"])
+def test_git_branch_flag_with_separate_value_asks(cmd):
+    # Read-only in git, but the value parses as a positional and cannot be told
+    # apart from a branch name, so it falls back to the safe side.
+    assert run(command=cmd) == "ask"
+
 def test_git_unknown_subcommand_asks():
     assert run(command="git clone https://x") == "ask"
 
@@ -215,6 +246,10 @@ def test_uv_allowed(cmd):
 
 def test_uv_unknown_tool_asks():
     assert run(command="uv run black .") == "ask"
+
+@pytest.mark.parametrize("cmd", ["uv run --frozen", "uv run --no-sync", "uv run"])
+def test_uv_run_without_tool_asks(cmd):
+    assert run(command=cmd) == "ask"
 
 # ============================================================================
 # find

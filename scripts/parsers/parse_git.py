@@ -40,7 +40,7 @@ def check_git(command: Command, project_root: Path) -> tuple[Decision, str]:
     if any(x.key == "-c" for x in command.args):
         return (Decision.DENY, "Do not use `git -c` to inject config; it can run arbitrary code. Run the command directly.")
     if command.subcommand == "branch":
-        if any(arg.key not in BRANCH_READONLY_ARGS for arg in command.args):
+        if any(arg.key not in BRANCH_READONLY_ARGS for arg in command.named_args) or len(command.positional_args) > 1:
             return (Decision.ASK, "`git branch` requires the user validation.")
         return (Decision.ALLOW, "`git branch` is allowed by default.")
     if command.subcommand == "push":

@@ -14,7 +14,7 @@ def check_uv(command: Command) -> tuple[Decision, str]:
         return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
     if command.subcommand == "sync":
         return (Decision.ALLOW, "The `uv sync` command is allowed.")
-    if command.subcommand == "run" and len(command.args) >= 2:
+    if command.subcommand == "run" and len(command.positional_args) >= 2:
         if command.positional_args[1].value in RUNNABLE_TOOLS:
             return (Decision.ALLOW, f"The `uv run {command.positional_args[1].value}` command is allowed.")
         if len(command.args) == 3 and command.args[1].value == "python" and command.args[2].key == "--version":
