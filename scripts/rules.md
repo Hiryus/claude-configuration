@@ -1,5 +1,3 @@
-**Status**: reversed engieneered from code - needs cleanup and to add reasons.
-
 This file describes the rules we want to implement to control the tool calls.
 - If two rules contradict each other, **specific** rules take precedence over **generic** ones, then **deny** rules takes precedence over the others.
 - In most cases, rules either define `allow` or `deny` behaviors.
@@ -262,13 +260,39 @@ Using containers is a good way to isolate dangerous or complex commands to ensur
 
 Thus, agents are requested to run commands in a container when they are nto automatically **allowed**.
 
+>The rules below only mention the docker version of each command for concision, but the podman equivalent is also/allowed/denied at the same time.
+
 ### 3.1 Status commands
 
-The following commands are **allowed**:
-- `docker inspect`, `docker logs`, `docker port`, `docker ps`, `docker --version`,
-- `docker compose logs`, `docker compose ps`,
-- `podman inspect`, `podman logs`, `podman port`, `podman ps`, `podman --version`,
-- `podman compose logs`, `podman compose ps`.
+The following commands are **allowed** for both `docker` and `podman`:
+- `docker compose config`,
+- `docker compose logs`,
+- `docker compose ls`/`docker compose ps`,
+- `docker compose images`,
+- `docker compose port`,
+- `docker compose stats`,
+- `docker compose top`,
+- `docker compose version`,
+- `docker compose volumes`,
+- `docker config inspect`,
+- `docker config ls`/`docker config list`,
+- `docker container inspect`/`docker inspect`,
+- `docker container logs`/`docker logs`,
+- `docker container list`/`docker container ls`/`docker container ps`/`docker ps`,
+- `docker container port`/`docker port`,
+- `docker container stats`/`docker stats`,
+- `docker container top`/`docker top`,
+- `docker inspect`,
+- `docker image inspect`,
+- `docker image ls`/`docker image list`/`docker images`,
+- `docker image pull`,
+- `docker network inspect`,
+- `docker network list`/`docker network ls`,
+- `docker system df`,
+- `docker system info`/`docker info`,
+- `docker version`/`docker --version`,
+- `docker volume inspect`,
+- `docker volume ls`/`docker volume list`,
 
 **Reason:** These commands are required to get the current status and debug potential errors.
 They are harmless (except maybe if there is sensitive data in the logs).
@@ -276,24 +300,101 @@ They are harmless (except maybe if there is sensitive data in the logs).
 ### 3.1 Running a container
 
 The following options are specifically **denied**:
---cap-add
---device
---privileged
---security-opt
---user root / -u 0
+- `--cap-add`,
+- `--device`,
+- `--privileged`,
+- `--security-opt`,
+- `--user root / -u 0`.
 
-The `docker run` and `podman run` commands are **allowed** with the following restrictions:
---volume/-v, --mount, --volumes-from, --tmpfs
-:rw :z/:Z --mount type=bind,src=...,dst=...,readonly
-- 
-Anything else is an **ask**.
+**Reason:** These options (may) allow to escape the sandboxed container into the host.
 
-**Reason:** The aim here is to allow the agent to run any command in any container, but to only be able to bind the project volume to ensure the untrusted command cannot change the host outside the project.
+The following options are **allowed** (as long as they don't use one of the above options):
+- `docker compose down`,
+- `docker compose kill`,
+- `docker compose pause`,
+- `docker compose restart`,
+- `docker compose rm`,
+- `docker compose run`,
+- `docker compose start`,
+- `docker compose stop`,
+- `docker compose unpause`,
+- `docker compose up`,
+- `docker compose wait`,
+- `docker container pause`/`docker pause`,
+- `docker container restart`/`docker restart`,
+- `docker container start`/`docker start`,
+- `docker container stop`/`docker stop`,
+- `docker container unpause`/`docker unpause`,
+- `docker container wait`/`docker wait`,
+- `docker network connect`,
+- `docker network create`,
+- `docker network disconnect`,
+- `docker network remove`/`docker network rm`,
+- `docker volume remove`/`docker volume rm`,
+- `docker network prune`,
+- `docker system prune`,
+- `docker volume prune`.
+
+**Reason:** These options can modify containers, images, and other docker objects, but will not corrupt the host system. Some of them are also widely and reguarly used in a normal development lifecycle.
+
+The `docker compose exec`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
+- `-d`/`--detach`,
+- `--entrypoint`,
+- `-e`/`--env`,
+- `--env-file`,
+- `--expose`,
+- `--health-cmd`,
+- `--health-interval`,
+- `--health-retries`,
+- `--health-start-interval	`,
+- `--health-start-period`,
+- `--health-timeout`,
+- `--help`,
+- `--name`,
+- `--network`,
+- `--network-alias`,
+- `--no-healthcheck`,
+- `-p`, `--publish`,
+- `-P`, `--publish-all`,
+- `--pull`,
+- `-q`/`--quiet`,
+- `--read-only`,
+- `--restart`,
+- `--rm`,
+- `--stop-timeout`,
+- `--tmpfs`,
+- `-w`/`--workdir`.
+
+The `volume create` command is **allowed** as long as it only reference the project directory..
+
+The `docker compose cp` command is **allowed** as long as it only references files compatible with the [File rules](##file-rules).
+
+**Reason:** The aim here is to allow the agent to run any command in any _isolated_ container, allowing to bind only the project directory to ensure the untrusted command cannot change the host outside of the project files.
 
 ### 3.1 Buildig an image
 
-The `docker build` and `podman build` commands are **allowed** with the following restrictions:
-- 
-Anything else is an **ask**.
+The `docker build` and `docker buildx` commands are allowed, as long as they only reference files inside the project, and with the following options (any other option is **ask**):
+- `--build-arg`,
+- `--build-context` (path is subject to the [File rules](##file-rules)),,
+- `--cache-from` (path is subject to the [File rules](##file-rules)),,
+- `--cache-to` (path is subject to the [File rules](##file-rules)),,
+- `-f`/`--file` (path is subject to the [File rules](##file-rules)),,
+- `--iidfile` (path is subject to the [File rules](##file-rules)),,
+- `--label`,
+- `--metadata-file` (path is subject to the [File rules](##file-rules)),,
+- `--no-cache`,
+- `--no-cache-filter`,
+- `-o`/`--output` (path is subject to the [File rules](##file-rules)),,
+- `--pull`,
+- `-q`/`--quiet`,
+- `--resource`,
+- `-t`/`--tag`,
+- `--target`.
+
+The following commands are **allowed** with the following restrictions:
+- `docker compose pull`,
+- `docker image pull`/`docker pull`,
+- `docker image rm`/`docker image remove`/`docker rmi`,
+- `docker image prune`.
 
 **Reason:** Building and testing docker images are a normal part of the development process. It may also be useful for running complex command/programs isolated in a container.
