@@ -143,6 +143,13 @@ def is_file_access_allowed(path_text: str, project_root: Path, read: bool) -> bo
 # Access policy
 # ============================================================================
 
+def worst(*verdicts: tuple[Decision, str]) -> tuple[Decision, str]:
+    """
+    The most severe verdict (DENY > ASK > ALLOW), so that a deny never degrades
+    into an ask. A tie keeps the first one: its reason is the more specific.
+    """
+    return max(verdicts, key=lambda verdict: list(Decision).index(verdict[0]))
+
 def check_access(command: Command, references: list[Reference], project_root: Path) -> tuple[Decision, str]:
     """
     Generic, command-agnostic checks on the files and shape of a command.

@@ -232,7 +232,7 @@ In **edit mode**, `npm prune` is also **allowed**.
 **Reason:** The `npm` command can be very powerful (or dangerous). But it is also used regularly for good automation (including security audits).
 The aim, here, is to allow usual _and_ safe commands.
 
-### 2.13. Specific podman rules
+### 2.13. Specific docker/podman rules
 
 See [Containers rules](#3-containers-rules).
 
@@ -260,8 +260,24 @@ Using containers is a good way to isolate dangerous or complex commands to ensur
 Thus, agents are requested to run commands in a container when they are not automatically **allowed**.
 
 > The rules below only mention the docker version of each command for concision, but the podman equivalent is also allowed/denied at the same time.
+> The legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`.
 
-### 3.1. Status commands
+### 3.1. Global commands
+
+The following global `compose` options (`docker compose -f compose.yml up`) are **allowed**:
+`--ansi`,
+`--env-file` (path is subject to the [File rules](#1-file-rules)),
+`-f`/`--file` (path is subject to the [File rules](#1-file-rules)),
+`--parallel`,
+`--profile`,
+`--progress`,
+`-p`/`--project-name`.
+The `--env-file` and `-f`/`--file` values are subject to the [File rules](#1-file-rules). Any other global option (including `--project-directory`) is an **ask**.
+
+**Reason**: These options are needed to target the right compose project, and their files can be verified.
+`--project-directory` is excluded because it re-anchors every relative path of the compose file (build contexts, volumes).
+
+### 3.2. Status commands
 
 The following commands are **allowed** for both `docker` and `podman`:
 - `docker compose config`,
@@ -295,7 +311,7 @@ The following commands are **allowed** for both `docker` and `podman`:
 **Reason:** These commands are required to get the current status and debug potential errors.
 They are harmless (except maybe if there is sensitive data in the logs).
 
-### 3.2. Running a container
+### 3.3. Running a container
 
 The following options are specifically **denied**:
 - `--cap-add`,
@@ -307,18 +323,21 @@ The following options are specifically **denied**:
 **Reason:** These options (may) allow to escape the sandboxed container into the host.
 
 The following commands are **allowed** (as long as they don't use one of the above options):
+- `docker compose create`,
 - `docker compose down`,
 - `docker compose kill`,
 - `docker compose pause`,
 - `docker compose restart`,
 - `docker compose rm`,
-- `docker compose run`,
 - `docker compose start`,
 - `docker compose stop`,
 - `docker compose unpause`,
 - `docker compose up`,
 - `docker compose wait`,
+- `docker container kill`/`docker kill`,
 - `docker container pause`/`docker pause`,
+- `docker container prune`,
+- `docker container remove`/`docker container rm`/`docker rm`,
 - `docker container restart`/`docker restart`,
 - `docker container start`/`docker start`,
 - `docker container stop`/`docker stop`,
@@ -335,7 +354,7 @@ The following commands are **allowed** (as long as they don't use one of the abo
 
 **Reason:** These commands can modify containers, images, and other docker objects, but will not corrupt the host system. Some of them are also widely and regularly used in a normal development lifecycle.
 
-The `docker compose exec`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
+The `docker compose exec`, `docker compose run`, `docker container create`/`docker create`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
 - `-d`/`--detach`,
 - `--entrypoint`,
 - `-e`/`--env`,
@@ -365,11 +384,12 @@ The `docker compose exec`, `docker container exec`/`docker exec`, `docker contai
 
 The `docker volume create` command is **allowed** as long as it only references the project directory.
 
-The `docker compose cp` command is **allowed** as long as it only references files compatible with the [File rules](#1-file-rules).
+The `docker compose cp` and `docker container cp`/`docker cp` commands are **allowed** as long as they only reference files compatible with the [File rules](#1-file-rules).
+The container side of the copy (`service:/path`) is not checked: it is inside the sandbox.
 
 **Reason:** The aim here is to allow the agent to run any command in any _isolated_ container, allowing to bind only the project directory to ensure the untrusted command cannot change the host outside of the project files.
 
-### 3.3. Building an image
+### 3.4. Building an image
 
 The `docker build` and `docker buildx` commands are **allowed**, as long as they only reference files inside the project, and with the following options (any other option is **ask**):
 - `--build-arg`,

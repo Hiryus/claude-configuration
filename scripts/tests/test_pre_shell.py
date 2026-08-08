@@ -539,3 +539,314 @@ def test_glob_extglob_syntax_not_silently_allowed(tmp_path):
     (tmp_path / "a.py").touch()
     assert run(command="cat !(a).py", cwd=str(tmp_path)) != "allow"
 
+# ============================================================================
+# Containers (docker / podman)
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "docker ps",
+    "docker container ls",
+    "docker container list",
+    "docker container ps -a",
+    "docker images",
+    "docker image list",
+    "docker inspect web",
+    "docker info",
+    "docker system df",
+    "docker volume inspect data",
+    "docker network ls",
+    "docker config ls",
+    "docker --version",
+    "docker version",
+    "docker logs -f web",
+    "docker compose ps",
+    "docker compose logs web",
+    "docker compose version",
+    "docker compose -f compose.yml config",
+])
+def test_container_status_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "docker compose up -d",
+    "docker compose create",
+    "docker compose down",
+    "docker compose restart web",
+    "docker compose pull",
+    "docker stop web",
+    "docker restart web",
+    "docker container wait web",
+    "docker kill web",
+    "docker rm web",
+    "docker container remove web",
+    "docker container prune",
+    "docker network create mynet",
+    "docker network rm mynet",
+    "docker volume remove data",
+    "docker system prune",
+    "docker image prune",
+    "docker pull alpine",
+    "docker rmi alpine",
+])
+def test_container_manage_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_version_shortcut_does_not_skip_the_other_options():
+    # `--version` is an allow shortcut, but it may not vouch for what sits next
+    # to it: the rest of the line is checked first.
+    assert run(command="docker --debug --version") == "ask"
+    assert run(command="docker compose --env-file .env --version") == "deny"
+
+def test_compose_file_option_is_checked_after_the_verb():
+    # `-f` is a global option of `compose`, but the verbs inherit it: the file it
+    # names must be vetted wherever it sits on the line.
+    assert run(command="docker compose up -f /etc/evil.yml") == "ask"
+    assert run(command="docker compose up --env-file .env") == "deny"
+
+def test_compose_follow_flag_is_not_a_file():
+    # `-f` means `--follow` for `logs`: its "value" is a service name, which
+    # resolves inside the project and must stay allowed.
+    assert run(command="docker compose logs -f web") == "allow"
+    assert run(command="docker compose rm -f web") == "allow"
+
+def test_podman_mirrors_docker():
+    assert run(command="podman compose up -d") == "allow"
+    assert run(command="podman run --privileged alpine") == "deny"
+
+def test_legacy_compose_binary_allowed():
+    assert run(command="docker-compose up -d") == "allow"
+    assert run(command="podman-compose logs web") == "allow"
+
+# --- Escaping the sandbox ---------------------------------------------------
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --privileged alpine",
+    "docker run --cap-add SYS_ADMIN alpine",
+    "docker run --device /dev/sda alpine",
+    "docker run --security-opt seccomp=unconfined alpine",
+    "docker run -u 0 alpine",
+    "docker run -u0 alpine",
+    "docker run --user root alpine",
+    "docker run --user=0:0 alpine",
+    "docker exec -u root web ls",
+    "docker compose up --privileged",
+])
+def test_container_escape_options_denied(cmd):
+    assert run(command=cmd) == "deny"
+
+def test_non_root_user_still_asks():
+    assert run(command="docker run --user 1000 alpine") == "ask"
+
+def test_escape_option_hidden_behind_an_unknown_option_still_denied():
+    # `--pid` is unknown, so it is not paired with its value: `host` reads as the
+    # image name and ends the option walk. `--privileged` sits behind it and must
+    # still be found -- a deny may never degrade into an ask.
+    assert run(command="docker run --pid host --privileged alpine") == "deny"
+
+# --- Running a container ----------------------------------------------------
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm alpine",
+    "docker run --rm -v .:/app -w /app alpine",
+    "docker run --rm -v ./src:/app:ro alpine",
+    "docker run --rm -v mydata:/data alpine",
+    "docker run --rm --mount type=bind,source=./src,target=/app alpine",
+    "docker run --rm --mount type=volume,source=mydata,target=/data alpine",
+    "docker run -d --name web -p 8080:80 -e FOO=bar --network mynet nginx",
+    "docker run --rm --entrypoint /bin/sh alpine",
+    "docker run --rm --tmpfs /scratch alpine",
+    "docker exec web ls",
+    "docker create --name web nginx",
+    "docker compose run --rm web",
+    "docker compose exec web ls",
+])
+def test_container_run_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_container_argv_is_not_checked():
+    # Everything after the image runs *inside* the sandbox: it is neither a
+    # docker option nor a host path.
+    assert run(command="docker run --rm alpine cat /etc/shadow") == "allow"
+    assert run(command="docker run --rm alpine ls -la /root/.ssh") == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm -v /etc:/etc alpine",
+    "docker run --rm --mount type=bind,source=/etc,target=/etc alpine",
+    "docker run --rm --mount type=BIND,source=/etc,target=/etc alpine",
+    "docker run --rm --volumes-from other alpine",
+    "docker run --rm -it alpine",
+    "docker run --rm --cgroup-parent /x alpine",
+    "docker run --rm -v $(pwd):/app alpine",
+    "docker create -v /etc:/etc nginx",
+])
+def test_container_run_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+def test_container_env_file_secret_denied():
+    assert run(command="docker run --rm --env-file .env alpine") == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm --env-file .env --pid host alpine",
+    "docker run --rm --env-file .env --volumes-from other alpine",
+    "docker run --rm -v ./certs/server.key:/k --pid host alpine",
+    "docker build --iidfile .env --platform linux/amd64 .",
+    "docker compose --env-file .env --project-directory ../x up",
+])
+def test_secret_behind_an_unsupported_option_still_denied(cmd):
+    # An option that is only an ask may not hide a file access that is a deny.
+    assert run(command=cmd) == "deny"
+
+def test_secret_after_an_unsupported_option_still_denied():
+    # The unknown option comes first here: the re-scan pairs it with its value,
+    # so the options behind it are read instead of being taken for the image.
+    assert run(command="docker run --rm --pid host --env-file .env alpine") == "deny"
+    assert run(command="docker run --rm --pid host -v ./certs/server.key:/k alpine") == "deny"
+
+def test_container_argv_is_not_read_as_host_options():
+    # Docker only takes options before the image: what follows runs in the
+    # sandbox, so it may not be reported as an escape attempt on the host.
+    assert run(command="docker run --rm --pid host alpine mytool --privileged") == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "docker rm -v --privileged web",
+    "docker compose down -v --privileged",
+])
+def test_escape_option_behind_a_valueless_flag_denied(cmd):
+    # `-v` takes no value for these verbs: it may not swallow the option after it.
+    assert run(command=cmd) == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm --mount type=bind,source=.env,target=/x alpine",
+    "docker run --rm --mount type=bind,source=./.env,target=/x alpine",
+    "docker run --rm --mount type=bind,src=certs/server.key,dst=/x alpine",
+    "docker run --rm --mount type=bind,source=.ssh/id_rsa,target=/x alpine",
+    "docker run --rm --mount src=.env,dst=/x alpine",
+    "docker run --rm --mount type=glob,source=.ssh/id_*,target=/x alpine",
+    "docker run --rm --mount type=bind,source=./ok,src=.env,target=/x alpine",
+    "docker run --rm --mount type=bind,source=./.git,readonly=true,ro=false,target=/x alpine",
+])
+def test_bind_mount_of_a_secret_denied(cmd):
+    # A bind source is a host path even without a leading `./`: unlike the `-v`
+    # syntax, a bare name is never a docker-managed volume name.
+    assert run(command=cmd) == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm --mount type=volume,volume-opt=type=none,volume-opt=o=bind,volume-opt=device=/etc,target=/x alpine",
+    "docker run --rm --mount type=volume,source=v,volume-opt=device=/etc,target=/x alpine",
+    "docker run --rm --mount src=/etc,dst=/x alpine",
+    "docker run --rm --mount type=glob,source=/etc/*,target=/x alpine",
+    "docker run --rm --mount type=bogus,source=/etc,target=/x alpine",
+    "docker run --rm --mount type=bind,source=.,src=/etc,target=/x alpine",
+    "docker run --rm --mount type=bind,source=/etc,src=.,target=/x alpine",
+])
+def test_mount_binding_host_directory_asks(cmd):
+    # Only the types naming a docker object are trusted: an unknown one may bind.
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm --mount type=volume,source=mydata,target=/data alpine",
+    "docker run --rm --mount type=volume,source=mydata,volume-opt=device=./cache,target=/data alpine",
+    "docker run --rm --mount type=bind,source=src,target=/app alpine",
+    "docker run --rm --mount src=src,dst=/app alpine",
+])
+def test_project_and_named_volume_mounts_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("flag", ["ro", "ro=true", "ro=1", "ro=Y", "readonly", "readonly=true"])
+def test_readonly_mount_is_read_only(flag):
+    # Reading the .git directory is fine; writing it is a deny (rule 1.2).
+    assert run(command=f"docker run --rm --mount type=bind,source=./.git,target=/x,{flag} alpine") == "allow"
+
+@pytest.mark.parametrize("flag", ["", ",ro=false", ",ro=False", ",ro=f", ",ro=0", ",readonly=false"])
+def test_mount_without_a_true_readonly_flag_is_read_write(flag):
+    # Every spelling but a recognised "true" is a read-write mount: the weaker
+    # Mode.READ may not be assumed by default.
+    assert run(command=f"docker run --rm --mount type=bind,source=./.git,target=/x{flag} alpine") == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm -v /tmp/work:/work alpine",
+    "docker run --rm --mount type=bind,source=/tmp/work,target=/work alpine",
+    "docker run --rm --mount type=bind,source=~/.claude,target=/x,ro alpine",
+    "docker run --rm -v ..:/parent alpine",
+    "docker volume create --opt device=/tmp/work data",
+])
+def test_mount_outside_the_project_asks(cmd):
+    # Rule 3.3 is stricter than the file rules: /tmp and ~/.claude are readable
+    # by the agent, but may not be handed to a container.
+    assert run(command=cmd) == "ask"
+
+# --- Volumes and copies -----------------------------------------------------
+
+def test_volume_create_allowed():
+    assert run(command="docker volume create data") == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "docker volume create --opt type=none,o=bind,device=/etc data",
+    "docker volume create -o device=/etc data",
+])
+def test_volume_create_binding_host_directory_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "docker compose cp web:/app/out ./out",
+    "docker cp web:/app/out ./out",
+    "docker container cp ./src web:/app",
+])
+def test_container_cp_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "docker compose cp web:/app/out /etc/out",
+    "docker cp web:/app/out /etc/out",
+])
+def test_container_cp_outside_project_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+# --- Building an image ------------------------------------------------------
+
+@pytest.mark.parametrize("cmd", [
+    "docker build .",
+    "docker build -t myapp:dev .",
+    "docker build --no-cache --pull -f docker/Dockerfile .",
+    "docker build --build-arg VERSION=1 --target dev .",
+    "docker buildx build -t myapp .",
+    "docker build --cache-to type=local,dest=./cache .",
+])
+def test_container_build_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "docker build -f /etc/Dockerfile .",
+    "docker build -o /etc/out .",
+    "docker build --platform linux/amd64 .",
+    "docker build /etc",
+    "docker buildx create --use",
+])
+def test_container_build_asks(cmd):
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "docker build --iidfile .env .",
+    "docker build --metadata-file id_rsa .",
+    "docker build -o type=local,dest=.env .",
+    "docker build --cache-from ./certs/server.key .",
+])
+def test_container_build_secret_paths_denied(cmd):
+    # A bare build path is cwd-relative, not a named volume: it must be vetted.
+    assert run(command=cmd) == "deny"
+
+# --- Fallback ---------------------------------------------------------------
+
+@pytest.mark.parametrize("cmd", [
+    "docker",
+    "docker push myapp",
+    "docker image push myapp",
+    "docker compose",
+    "docker compose --project-directory ../other up",
+])
+def test_container_unknown_commands_ask(cmd):
+    assert run(command=cmd) == "ask"
+
+def test_container_login_asks():
+    assert run(command="docker login -u me registry.io") == "ask"
+

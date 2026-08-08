@@ -5,15 +5,15 @@ from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
 from parsers.parse_bash import ParseError, Parser
+from parsers.parse_container import check_container
 from parsers.parse_find import check_find
 from parsers.parse_git import check_git
 from parsers.parse_grep import grep_references
 from parsers.parse_node import check_node
 from parsers.parse_npm import check_npm
-from parsers.parse_podman import check_podman
 from parsers.parse_sed import check_sed
 from parsers.parse_uv import check_uv
-from utils import check_access, format_references, format_response
+from utils import check_access, format_references, format_response, worst
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -86,8 +86,8 @@ def check_command(command: Command, references: list[Reference], project_root: P
     if command.base == "npm":
         return check_npm(command, mode)
 
-    if command.base == "podman":
-        return check_podman(command)
+    if command.base in ["docker", "docker-compose", "podman", "podman-compose"]:
+        return check_container(command, project_root)
 
     if command.base == "sed":
         return check_sed(command, project_root)
@@ -123,7 +123,7 @@ def analyze(prompt: str, project_root: Path, mode: str) -> tuple[Decision, str]:
             continue
         references = referenced_paths(command)
         verdicts = [check_access(command, references, project_root), check_command(command, references, project_root, mode)]
-        results.append(max(verdicts, key=lambda verdict: list(Decision).index(verdict[0])))
+        results.append(worst(*verdicts))
 
     if denies := [reason for (decision, reason) in results if decision is Decision.DENY]:
         return (Decision.DENY, "\n".join(dict.fromkeys(denies)))

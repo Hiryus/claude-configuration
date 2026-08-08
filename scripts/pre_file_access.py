@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from model import Decision
-from utils import expand_glob, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret
+from utils import expand_glob, format_response, has_glob, is_file_access_allowed, is_git_dir, is_secret, worst
 
 
 def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[Decision, str]:
@@ -18,8 +18,11 @@ def analyze(file_path:str, project_root:Path, tool_name:str, mode:str) -> tuple[
             if tool_name == "read" and not project_root.exists():
                 return (Decision.ALLOW, "")  # the project itself doesn't exist; nothing real to read
             return (Decision.ASK, f"'{file_path}' looks like a glob pattern; cannot statically verify which files it matches.")
-        for match in matches:
-            decision, reason = analyze(str(match), project_root, tool_name, mode)
+        if matches:
+            # The most severe match wins: a secret two files down must not be
+            # masked by an earlier match that only asks. An empty expansion is
+            # a real (negative) result, but worst() needs at least one verdict.
+            decision, reason = worst(*(analyze(str(match), project_root, tool_name, mode) for match in matches))
             if decision is not Decision.ALLOW:
                 return (decision, reason)
     elif not is_file_access_allowed(file_path, project_root, read=tool_name == "read"):
