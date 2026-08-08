@@ -4,17 +4,16 @@ import sys
 from pathlib import Path
 
 from model import Command, Decision, Mode, Reference
-from parse_bash import ParseError, Parser
-from parse_grep import grep_references
-from utils import (
-    expand_glob,
-    format_references,
-    format_response,
-    has_glob,
-    is_file_access_allowed,
-    is_git_dir,
-    is_secret,
-)
+from parsers.parse_bash import ParseError, Parser
+from parsers.parse_find import check_find
+from parsers.parse_git import check_git
+from parsers.parse_grep import grep_references
+from parsers.parse_node import check_node
+from parsers.parse_npm import check_npm
+from parsers.parse_podman import check_podman
+from parsers.parse_sed import check_sed
+from parsers.parse_uv import check_uv
+from utils import check_access, format_references, format_response
 
 # ============================================================================
 # Reference extraction  (which paths a command touches)
@@ -37,11 +36,6 @@ def referenced_paths(command: Command) -> list[Reference]:
 # Security policy  (business logic)
 # ============================================================================
 
-# A "simple" sed script: one or more `addr[,addr]p` print commands, separated
-# by `;`. No `s`, `w`, `e`, `r`, ... commands -- those can write or execute
-# arbitrary content, so any script that doesn't fully match this is rejected.
-SIMPLE_SED_SCRIPT_RE = re.compile(r"^\s*(?:(?:\d+|\$)(?:,(?:\d+|\$))?\s*p\s*;?\s*)+$")
-
 def describe_refs(refs: list[Reference]) -> str:
     accesses = []
     for file in sorted(r.text for r in refs if r.mode is Mode.READ):
@@ -49,36 +43,6 @@ def describe_refs(refs: list[Reference]) -> str:
     for file in sorted(r.text for r in refs if r.mode is Mode.WRITE):
         accesses.append(f"writes {format_references([file])}")
     return ", ".join(accesses)
-
-def check_access(command: Command, references: list[Reference], project_root: Path) -> tuple[Decision, str]:
-    """
-    Generic, command-agnostic checks on the files and shape of a command.
-    """
-    # Expand gloab patterns if any
-    expanded = []
-    for r in references:
-        if not has_glob(r.text):
-            expanded.append(r)
-            continue
-        matches = expand_glob(r.text, project_root)
-        if matches is None:
-            expanded.append(r)  # can't trust expansion -- keep as unresolved glob
-        elif not matches and r.mode is Mode.WRITE:
-            expanded.append(r)  # nullglob-off: bash would still write the literal, unverified name
-        else:
-            expanded.extend(Reference(mode=r.mode, text=str(m)) for m in matches)
-    # Then apply ALLOW/ASK/DENY rules
-    if secret_files := [r.text for r in expanded if is_secret(r.text, project_root)]:
-        return (Decision.DENY, f"Refusing to access {format_references(secret_files)}: they look like secret files.")
-    if gitdir_files := [r.text for r in expanded if r.mode is Mode.WRITE and is_git_dir(r.text, project_root)]:
-        return (Decision.DENY, f"Refusing to write {format_references(gitdir_files)} inside the .git directory.")
-    if command.dynamic:
-        return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part - cannot verify it.")
-    if glob_files := [r.text for r in expanded if has_glob(r.text)]:
-        return (Decision.ASK, f"`{command.base}` uses a glob pattern ({format_references(glob_files)}); cannot statically verify which files it matches.")
-    if external_files := [r.text for r in expanded if not is_file_access_allowed(r.text, project_root, read=r.mode is Mode.READ)]:
-        return (Decision.ASK, f"`{command.base}` accesses {format_references(external_files)} outside the project.")
-    return (Decision.ALLOW, "")
 
 def check_command(command: Command, references: list[Reference], project_root: Path, mode: str) -> tuple[Decision, str]:
     """
@@ -105,136 +69,31 @@ def check_command(command: Command, references: list[Reference], project_root: P
         return check_access(command, references, project_root)
 
     if command.base == "find":
-        for arg in ["-delete", "-exec", "-execdir", "-fls", "-fprint", "-fprint0", "-fprintf", "-ok", "-okdir"]:
-            if any(x.low_key == arg for x in command.args):
-                return (Decision.ASK, f"`{command.base}` uses the {arg} argument.")
-        # The leading positional arguments are the search roots.
-        references = []
-        for arg in command.args:
-            if not arg.positional:
-                break
-            if arg.value is not None:
-                references.append(Reference(mode=Mode.READ, text=arg.value))
-        return check_access(command, references, project_root)
+        return check_find(command, project_root)
 
     if command.base == "gh":
         return (Decision.DENY, "The `gh` command is not installed. Use the github MCP instead.")
 
     if command.base == "git":
-        references = []
-        if any(x.key == "-C" for x in command.args):
-            return (Decision.DENY, "Do not use `git -C`: you are already at the repository root.")
-        if any(x.key == "-c" for x in command.args):
-            return (Decision.DENY, "Do not use `git -c` to inject config; it can run arbitrary code. Run the command directly.")
-        if command.subcommand == "branch":
-            if any(arg.key not in ["--color", "--no-color", "--show-current", "-v", "--abbrev", "--no-abbrev", "--column", "--no-column", "--sort=<key>", "--merged", "--no-merged", "--contains", "--no-contains", "--points-at", "--format", "-r", "--remotes", "-a", "--all", "--list"] for arg in command.args):
-                return (Decision.ASK, "`git branch` requires the user validation.")
-            return (Decision.ALLOW, "`git branch` is allowed by default.")
-        if command.subcommand == "push":
-            if any(arg.key in ["-f", "--force"] for arg in command.args):
-                return (Decision.DENY, "`git push --force` is forbidden by the security policy: only the user is allowed to use it.")
-            return (Decision.ASK, "`git push` requires the user validation.")
-        for idx, arg in enumerate(command.args):
-            if arg.low_key in ["--output", "-o"]:
-                if not arg.value and len(command.args) <= idx + 1:
-                    raise ParseError("param --output has no value")
-                value = arg.value if arg.value else command.args[idx + 1].value
-                if value is None:
-                    raise ParseError("param --output has no value")
-                references.append(Reference(mode=Mode.WRITE, text=value))
-        if command.subcommand in ["add", "commit"]:
-            references += [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args[1:] if arg.value is not None]
-        if any(references):
-            decision, reason = check_access(command, references, project_root)
-            if decision != Decision.ALLOW: return decision, reason
-        if command.subcommand == "remote":
-            # No subcommand is allowed, including with --xxx modifyers
-            if len(command.positional_args) == 1:
-                return (Decision.ALLOW, "The `git remote` command is allowed.")
-            # Read only subcommands are also ALLOWed
-            remote_subcommand = command.args[1].value if (len(command.args) >= 2 and command.args[1].key is None) else None
-            if remote_subcommand in ["show", "get-url"]:
-                return (Decision.ALLOW, f"The `git remote {remote_subcommand}` command is allowed.")
-            # Everything else is ASK
-            return (Decision.ASK, f"The `git remote {remote_subcommand}` command is not allowed by default.")
-        if command.subcommand in ["add", "check-ignore", "commit", "diff", "grep", "hash-object", "log", "ls-files", "ls-tree", "merge-base", "rev-parse", "show", "status"]:
-            return (Decision.ALLOW, f"The `git {command.subcommand}` command is allowed.")
-        return (Decision.ASK, f"The `git {command.subcommand}` command is not allowed by default.")
+        return check_git(command, project_root)
 
     if command.base == "grep":
         return check_access(command, grep_references(command), project_root)
 
     if command.base == "node":
-        if len(command.args) == 1 and command.args[0].key in ("--version", "-v"):
-            return (Decision.ALLOW, "The `node --version` command is allowed.")
-        if len(command.args) >= 1 and command.args[0].key == "--check":
-            references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args if arg.value is not None]
-            return check_access(command, references, project_root)
-        if command.subcommand and len(command.subcommand) <= 50:
-            return (Decision.ASK, f"The `node {command.subcommand}` command is not allowed by default.")
-        else:
-            return (Decision.ASK, "The `node` command is not allowed by default.")
+        return check_node(command, project_root)
 
     if command.base == "npm":
-        if len(command.args) == 1 and command.args[0].key in ("--version", "-v"):
-            return (Decision.ALLOW, "The `npm --version` command is allowed.")
-        if command.subcommand in ["ls", "outdated", "view"]:
-            return (Decision.ALLOW, f"The `npm {command.subcommand}` command is allowed.")
-        if command.subcommand == "prune":
-            if mode in ["acceptEdits", "auto", "bypassPermissions"]:
-                return (Decision.ALLOW, "The `npm prune` command is allowed.")
-            return (Decision.ASK, f"The `npm prune` command modifies node_modules; not allowed in {mode} mode.")
-        if command.subcommand == "audit":
-            if any(a.low_key == "--fix" or a.low_value == "fix" for a in command.args):
-                return (Decision.ASK, "The `npm audit fix` command is not allowed by default.")
-            return (Decision.ALLOW, "The `npm audit` command is allowed.")
-        if command.subcommand:
-            return (Decision.ASK, f"The `npm {command.subcommand}` command is not allowed by default.")
-        else:
-            return (Decision.ASK, "The `npm` command is not allowed by default.")
+        return check_npm(command, mode)
 
     if command.base == "podman":
-        if command.subcommand == "compose":
-            if len(command.args) >= 2 and command.args[1].value == "logs":
-                return (Decision.ALLOW, "The `podman compose logs` command is allowed.")
-            if len(command.args) >= 2 and command.args[1].value == "ps":
-                return (Decision.ALLOW, "The `podman compose ps` command is allowed.")
-        if command.subcommand == "inspect":
-            return (Decision.ALLOW, "The `podman inspect` command is allowed.")
-        if command.subcommand in ["logs", "port", "ps"]:
-            return (Decision.ALLOW, f"The `podman {command.subcommand}` command is allowed.")
-        if len(command.args) == 1 and command.args[0].key == "--version":
-            return (Decision.ALLOW, "The `podman --version` command is allowed.")
-        if command.subcommand:
-            return (Decision.ASK, f"The `podman {command.subcommand}` command is not allowed by default.")
-        else:
-            return (Decision.ASK, "The `podman` command is not allowed by default.")
+        return check_podman(command)
 
     if command.base == "sed":
-        if any(x.low_key not in ("-n", "--quiet", "--silent") for x in command.named_args):
-            return (Decision.ASK, f"`{command.base}` script is too complex; cannot verify it's read-only.")
-        if not command.positional_args or not SIMPLE_SED_SCRIPT_RE.match(command.positional_args[0].value or ""):
-            return (Decision.ASK, f"`{command.base}` script is too complex; cannot verify it's read-only.")
-        references = [Reference(mode=Mode.READ, text=arg.value) for arg in command.positional_args[1:] if arg.value is not None]
-        return check_access(command, references, project_root)
+        return check_sed(command, project_root)
 
     if command.base == "uv":
-        if command.subcommand == "run" and len(command.positional_args) >= 2 and command.positional_args[1].low_value == "mypy":
-            return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
-        if command.subcommand == "sync":
-            return (Decision.ALLOW, "The `uv sync` command is allowed.")
-        if command.subcommand == "run" and len(command.args) >= 2:
-            if command.positional_args[1].value in ["basedpyright", "pyright", "pytest", "ruff", "ty"]:
-                return (Decision.ALLOW, f"The `uv run {command.positional_args[1].value}` command is allowed.")
-            if len(command.args) == 3 and command.args[1].value == "python" and command.args[2].key == "--version":
-                return (Decision.ALLOW, f"The `uv {command.args[1].key} --version` command is allowed.")
-            return (Decision.ASK, f"The `uv run {command.positional_args[1].value}` command is not allowed by default.")
-        if len(command.args) == 1 and command.args[0].key == "--version":
-            return (Decision.ALLOW, "The `uv --version` command is allowed.")
-        if command.subcommand:
-            return (Decision.ASK, f"The `uv {command.subcommand}` command is not allowed by default.")
-        else:
-            return (Decision.ASK, "The `uv` command is not allowed by default.")
+        return check_uv(command)
 
     # Commands that read the files named in their positional arguments: the # paths must be vetted (secret / outside the project) before allowing.
     # No awk/sed: they can execute arbitrary programs.

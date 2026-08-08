@@ -6,6 +6,8 @@ import sys
 
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from model import Command, Decision, Mode, Reference
+
 # ============================================================================
 # Hook I/O
 # ============================================================================
@@ -136,3 +138,37 @@ def is_file_access_allowed(path_text: str, project_root: Path, read: bool) -> bo
     if read and is_claude_dir(path_text, project_root):
         return True
     return False
+
+# ============================================================================
+# Access policy
+# ============================================================================
+
+def check_access(command: Command, references: list[Reference], project_root: Path) -> tuple[Decision, str]:
+    """
+    Generic, command-agnostic checks on the files and shape of a command.
+    """
+    # Expand gloab patterns if any
+    expanded = []
+    for r in references:
+        if not has_glob(r.text):
+            expanded.append(r)
+            continue
+        matches = expand_glob(r.text, project_root)
+        if matches is None:
+            expanded.append(r)  # can't trust expansion -- keep as unresolved glob
+        elif not matches and r.mode is Mode.WRITE:
+            expanded.append(r)  # nullglob-off: bash would still write the literal, unverified name
+        else:
+            expanded.extend(Reference(mode=r.mode, text=str(m)) for m in matches)
+    # Then apply ALLOW/ASK/DENY rules
+    if secret_files := [r.text for r in expanded if is_secret(r.text, project_root)]:
+        return (Decision.DENY, f"Refusing to access {format_references(secret_files)}: they look like secret files.")
+    if gitdir_files := [r.text for r in expanded if r.mode is Mode.WRITE and is_git_dir(r.text, project_root)]:
+        return (Decision.DENY, f"Refusing to write {format_references(gitdir_files)} inside the .git directory.")
+    if command.dynamic:
+        return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part - cannot verify it.")
+    if glob_files := [r.text for r in expanded if has_glob(r.text)]:
+        return (Decision.ASK, f"`{command.base}` uses a glob pattern ({format_references(glob_files)}); cannot statically verify which files it matches.")
+    if external_files := [r.text for r in expanded if not is_file_access_allowed(r.text, project_root, read=r.mode is Mode.READ)]:
+        return (Decision.ASK, f"`{command.base}` accesses {format_references(external_files)} outside the project.")
+    return (Decision.ALLOW, "")
