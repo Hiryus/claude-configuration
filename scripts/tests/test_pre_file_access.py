@@ -1,10 +1,9 @@
 # pyright: reportMissingImports=false
 
 import json
-import pytest
-
 from pathlib import Path
 
+import pytest
 from pre_file_access import main
 
 HOOK = "pre_file_access.py"
@@ -15,11 +14,12 @@ FAKE_HOME = "/home/fakeuser"
 # Helpers
 # ============================================================================
 
-def run(file_path:str, tool_name="Read", cwd=ROOT):
+def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
         "tool_name": tool_name,
+        "permission_mode": mode,
         "tool_input": {
             "file_path": file_path,
         },
@@ -36,6 +36,28 @@ def test_secret_files_denied(file_path):
 
 def test_env_example_is_not_secret():
     assert run(file_path="/proj/.env.example") == "allow"
+
+@pytest.mark.parametrize("file_path", ["/proj/.env.prod", "/proj/.env.production", "/proj/.ENV.PRODUCTION"])
+def test_production_env_files_denied(file_path):
+    assert run(file_path=file_path) == "deny"
+
+@pytest.mark.parametrize("file_path", [
+    "/proj/server.PEM",
+    "/proj/SERVER.Key",
+    "/proj/store.JKS",
+    "/proj/.NETRC",
+    "/proj/ID_RSA",
+    "/proj/.SSH/known_hosts",
+])
+def test_secret_files_denied_whatever_their_spelling(file_path):
+    assert run(file_path=file_path) == "deny"
+
+@pytest.mark.parametrize("suffix", [".example", ".sample", ".template", ".EXAMPLE"])
+def test_template_suffixes_are_exempted(suffix):
+    assert run(file_path=f"/proj/.ssh/config{suffix}") == "allow"
+
+def test_dist_suffix_is_not_a_template():
+    assert run(file_path="/proj/.ssh/config.dist") == "deny"
 
 # ============================================================================
 # Git files
@@ -67,11 +89,42 @@ def test_read_claude_dir_allowed(monkeypatch):
     path = str(Path(FAKE_HOME) / ".claude" / "settings.json")
     assert run(file_path=path, tool_name="Read") == "allow"
 
-def test_write_claude_dir_asks(monkeypatch):
+@pytest.mark.parametrize("mode", ["default", "plan", "acceptEdits"])
+def test_write_claude_dir_denied_from_another_project(monkeypatch, mode):
+    # Rule 1.3: the harness is off-limits whatever the mode, since writing it
+    # would let the agent lift its own restrictions.
     monkeypatch.setenv("HOME", FAKE_HOME)
     monkeypatch.setenv("USERPROFILE", FAKE_HOME)
     path = str(Path(FAKE_HOME) / ".claude" / "settings.json")
-    assert run(file_path=path, tool_name="Write") == "ask"
+    assert run(file_path=path, tool_name="Write", mode=mode) == "deny"
+
+def test_write_claude_subdir_denied_from_another_project(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    path = str(Path(FAKE_HOME) / ".claude" / "scripts" / "utils.py")
+    assert run(file_path=path, tool_name="Write") == "deny"
+
+def test_write_claude_dir_asks_when_it_is_the_project(monkeypatch):
+    # Rule 1.3: working *on* the harness is the one case where writing it is
+    # legitimate -- still an ask in manual mode.
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    harness = Path(FAKE_HOME) / ".claude"
+    assert run(file_path=str(harness / "scripts" / "utils.py"), tool_name="Write", cwd=str(harness)) == "ask"
+
+def test_write_claude_dir_allowed_when_it_is_the_project(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    harness = Path(FAKE_HOME) / ".claude"
+    assert run(file_path=str(harness / "scripts" / "utils.py"), tool_name="Write", cwd=str(harness), mode="acceptEdits") == "allow"
+
+def test_write_claude_dir_denied_outside_a_project_nested_in_it(monkeypatch):
+    # The project is a harness subdirectory: files above it are still harness
+    # files, and off-limits.
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    harness = Path(FAKE_HOME) / ".claude"
+    assert run(file_path=str(harness / "settings.json"), tool_name="Write", cwd=str(harness / "scripts")) == "deny"
 
 def test_read_outside_claude_dir_still_asks(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
@@ -142,7 +195,7 @@ def test_glob_secret_denied_even_when_matched_after_a_benign_file(tmp_path, monk
     # is os.scandir order, which is arbitrary, so it is pinned here.
     (tmp_path / "app.yml").touch()
     (tmp_path / "app.key").touch()
-    monkeypatch.setattr("pre_file_access.expand_glob", lambda *_: [tmp_path / "app.yml", tmp_path / "app.key"])
+    monkeypatch.setattr("utils.filesystem.expand_glob", lambda *_: [tmp_path / "app.yml", tmp_path / "app.key"])
     assert run(file_path=str(tmp_path / "app.*"), tool_name="Write", cwd=str(tmp_path)) == "deny"
 
 def test_glob_expanding_into_git_dir_denied_for_write(tmp_path):

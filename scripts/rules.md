@@ -1,8 +1,17 @@
 This file describes the rules we want to implement to control the tool calls.
 - If two rules contradict each other, **specific** rules take precedence over **generic** ones, then **deny** rules take precedence over the others.
-- Any rule allowed in **edit mode** is also allowed in **auto mode**.
-- In **auto mode**, any `ask` is converted to a `deny`.
 - Any behavior not listed falls back to `ask` (`deny` in **auto mode**).
+
+
+## Modes
+
+Every call runs in exactly one mode, derived from the harness permission mode:
+- In **manual** mode, only reads are automatically **allowed** based on the [File rules](#1-file-rules).
+  This mode corresponds to the `default` and `plan` permission modes from claude code.
+- In **edit** mode, reads and writes are automatically **allowed** based on the [File rules](#1-file-rules).
+  This mode corresponds to the `acceptEdits` permission mode from claude code.
+- The **auto** mode **allows** the same calls as the **edit** mode, but also transforms any **ask** into a **deny**, effectively forbidding interractive validations.
+  This mode corresponds to any permission mode from claude code that does not already fall into the other two modes.
 
 
 ## 1. File rules
@@ -30,6 +39,8 @@ The agent is **denied** to **write** files in any `.git` directory locations, in
 The agent is **denied** to **write** files in its harness directory (`~/.claude`).
 
 **Reason**: Modifying the harness files would allow the agent to lift its own restrictions.  
+
+When the project directory _is_ the harness directory, **write** are **ask** in **manual** mode and **allowed** in the other modes.
 
 ### 1.4. Allowed folders
 
@@ -168,9 +179,9 @@ Additionally, for defence in depth, the commands that rewrite history are forbid
 
 #### 2.9.3. Configuration
 
-Reading git configuration (via the `git config` or `git -c`) is **allowed**.
+Reading git configuration (via the `git config`) is **allowed**.
 
-Writing git configuration (via the same options) is **ask**.
+Writing git configuration (via the same option or `git -c`) is **ask**.
 
 **Reason**: Reading git configuration is useful for the agent, but modifying it must never happen without the user's consent.
 
@@ -354,7 +365,7 @@ The following commands are **allowed** (as long as they don't use one of the abo
 
 **Reason:** These commands can modify containers, images, and other docker objects, but will not corrupt the host system. Some of them are also widely and regularly used in a normal development lifecycle.
 
-The `docker compose exec`, `docker compose run`, `docker container create`/`docker create`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
+The `docker compose exec`, `docker compose run`, `docker container create`/`docker create`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory and volumes from other containers can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
 - `-d`/`--detach`,
 - `--entrypoint`,
 - `-e`/`--env`,
