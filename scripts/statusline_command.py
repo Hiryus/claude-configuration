@@ -1,12 +1,10 @@
-#!/usr/bin/env python3
 """
 Formatter called by claude to render the status bar with context size and usage.
 Reads the status-line JSON payload from stdin and prints one line of colored text.
 """
-from dataclasses import dataclass
 import json
 import sys
-
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import SupportsFloat, SupportsInt
@@ -72,7 +70,7 @@ def get_tokens_color(nb_tokens:int) -> str:
     return GREEN
 
 
-def get_usage_color(pct:int|float) -> str:
+def get_usage_color(pct:float) -> str:
     if pct > 80:
         return RED
     if pct > 50:
@@ -80,7 +78,7 @@ def get_usage_color(pct:int|float) -> str:
     return GREEN
 
 
-def format_time_until(unix_ts:int|float) -> str|None:
+def format_time_until(unix_ts:float) -> str|None:
     try:
         reset_at = datetime.fromtimestamp(unix_ts, tz=timezone.utc)
         diff = reset_at - datetime.now(timezone.utc)

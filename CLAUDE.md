@@ -9,5 +9,5 @@
 The `Bash`, `Edit`, `Read`, and `Write` tools have specific restrictions listed in scripts/rules.md.
 - Read this file before using them.
 - Always use an **allowed** command when possible to avoid asking for the user validation.
-  Especially, if you need to run a bash command that is not **allowed** by default, run it inside a container.
+  Especially, if you need to run a bash command that is not **allowed** by default, run it inside a podman container.
 - In any case, if you need to run any bash command, clearly state what they do and how they work, then why you need to use them.

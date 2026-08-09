@@ -1,0 +1,111 @@
+# Rules not enforced
+
+Gaps between `rules.md` and the current behavior. Rules that are correctly implemented are omitted, so the numbering has holes.
+
+**Loosening the sandbox** (the rest are stricter than the rule, or wrong in a harmless direction):
+- **Modes** (#1) — the whole section is unenforced: `ask` never becomes `deny` in auto mode.
+- **2.13/3.x** (#28) — `podman` is unknown, so `podman run --privileged` asks instead of denying.
+
+
+## Modes
+
+1. [ ] Rule: in **auto** mode every **ask** becomes a **deny**. Current: **ask** stays **ask**, in both the file and the shell hook.
+
+
+## 1.1 No credentials access
+
+2. [x] Rule: `.env.production` is denied. Current: allowed.
+3. [x] Rule: the credential extensions are denied whatever their spelling. Current: only the lowercase spelling is denied (`key.PEM` is allowed).
+4. [x] Rule: the exempted template suffixes are `.example`, `.sample`, `.template`. Current: `.dist` is exempted too.
+
+
+## 1.3 No harness modifications
+
+5. [x] Rule: writing anywhere under `~/.claude` is denied, except when it's the project directory - in this case, writes are ask in manual mode and allowed in the other modes..
+       Current: it is an **ask** when the project sits elsewhere, and an **allow** when the working directory is the harness itself.
+
+
+## 1.4 Allowed folders
+
+6. [x] Rule: writes are automatic in **edit** mode only, so a **manual** mode write is an **ask** - whatever the tool that writes.
+       Current: only the file hook gated writes on the mode; the shell hook never read it, so `echo x > file` was **allowed** in **manual** mode.
+
+
+## 2.3 Tracking current directory
+
+7. [ ] Rule: `cd` is allowed when the path is resolvable, denied only when it is not. Current: every `cd` is denied, resolvable or not.
+
+
+## 2.7 Alternative binaries
+
+8. [ ] Rule: `python`/`python3` are denied, including from a virtual environment. Current: **ask**.
+9. [ ] Rule: `mypy` run through `uv` is denied. Current: **ask**.
+
+
+## 2.8 Read-only binaries
+
+10. [ ] Rule: `cut` and `uniq` are allowed unconditionally. Current: they are path-checked like `cat`, so `cut -d: -f1 /etc/passwd` asks.
+11. [ ] Rule: a simple `$VAR`/`${VAR}` substitution is allowed as an argument. Current: `echo $HOME` asks.
+
+
+## 2.9.1 Git directory
+
+12. [ ] Rule: defining `GIT_DIR` is denied. Current: denied only when it sits on the same command line as the `git` call; set by an earlier sub-command (`export GIT_DIR=... ; git log`) it goes through.
+
+
+## 2.9.2 History security
+
+13. [ ] Rule: pushing on `main`/`master` is denied. Current: **ask**.
+14. [ ] Rule: pushing on a `feat/` or `fix/` branch is allowed. Current: **ask**. No branch name is ever looked at: every push that is not `--force` is an **ask**.
+15. [ ] Rule: `git reset --hard` is denied. Current: **ask**.
+
+
+## 2.9.3 Configuration
+
+16. [ ] Rule: writing the configuration, `git -c` included, is an **ask**. Current: `git -c` is denied.
+
+
+## 2.9.4 Usual commands
+
+17. [ ] Rule: `git checkout` and `git switch` are allowed. Current: **ask**.
+18. [ ] Rule: `git reset` is allowed as long as `--hard` is not used. Current: **ask**.
+19. [ ] Rule: `git mv` and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
+20. [ ] Rule: `git add` is allowed. Current: its pathspecs are path-checked, so a pathspec outside the project asks.
+21. [ ] Rule: `git commit` is path-checked only when `--only`/`-o` is supplied. Current: its pathspecs are path-checked in every case.
+
+
+## 2.9.5 Read-only commands
+
+22. [ ] Rule: `git merge-base` is not listed, so it should **ask**. Current: allowed.
+23. [ ] Rule: only a fixed set of read-only `git branch` flags is allowed; creating a branch is not listed, so it should **ask**. Current: `git branch <name>` is allowed in **edit** and **auto** modes.
+
+
+## 2.10 Specific find rules
+
+24. [ ] Rule: `-fls`, `-fprint`, `-fprint0` and `-fprintf` are denied. Current: allowed. The first three only get their target path-checked; `-fprintf` is not looked at at all, target included.
+25. [ ] Rule: only the leading search roots are path-checked. Current: every non-flag word is, so expression values (`-newer FILE`, `-size +1M`, ...) are checked as if they were search roots.
+
+
+## 2.11 Specific node rules
+
+26. [ ] Rule: `node --version`/`-v` allowed, `node --check <file>` path-checked, anything else **ask**. Current: nothing is implemented, so every `node` call asks — `node --version` included.
+
+
+## 2.12 Specific npm rules
+
+27. [ ] Rule: `npm --version`/`-v`, `npm ls`, `npm outdated`, `npm view` and `npm audit` (without `fix`) are allowed, plus `npm prune` in **edit** mode. Current: nothing is implemented, so every `npm` call asks.
+
+
+## 2.13 / 3. Containers
+
+28. [ ] Rule: every podman equivalent is allowed or denied alongside its docker counterpart, and the legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`. Current: none of the three is recognized, so they all fall through to **ask** — including the calls that must be denied, such as `podman run --privileged`.
+29. [ ] Rule (3.3): `--user root`/`-u 0` is denied. Current: denied when the value is a separate word, allowed through when it is glued to the flag (`-u0`).
+30. [ ] Rule (3.3): only the project directory and other containers' volumes may be mounted. Current: `/tmp`, `/var/tmp` and (read-only) `~/.claude` may be mounted too.
+31. [ ] Rule (3.3): every mount source is checked. Current: a spec that repeats `source=`/`src=` only has one of the two checked, a bind-backed named volume declared through `--volume-opt device=` is not checked, and a spec carrying both `ro` and a contradicting `readonly` is read as read-only.
+32. [ ] Rule (3.3): the options allowed on run/exec/create are limited to the listed ones. Current: the container's own argv is read as docker options, so `docker run img ls -la` asks and `docker run img app --privileged` is denied.
+33. [ ] Rule (3.4): the build option paths are checked. Current: inside a structured value, only the path-looking fields are checked, so an unanchored one (`--output dest=secrets.env`) is skipped.
+
+
+## Not yet specified
+
+34. [ ] 2.15 (uv) and the harness credentials files of 1.1 are still `TODO` in `rules.md`. No uv rule is implemented: every `uv` call asks, `uv sync` and `uv run ruff` included.
