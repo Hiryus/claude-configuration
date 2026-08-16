@@ -18,6 +18,19 @@ from utils.format import format_references
 # Hook I/O
 # ============================================================================
 
+AUTO_MODE_DENIAL = """
+**Your tool call was denied because it requires the user validation.**
+{reason}
+
+You are in auto mode. In this mode, the user will not validate tool calls.
+Any tool call that is not explictely authorized, is denied.
+
+To complete your objective, you need to only request allowed calls.
+- The allowed list is described in ~/.claude/scripts/rules.md.
+- If you need to run forbidden bash commands, instead run them inside a docker container with "docker run ...". You are allowed to mount the project directory inside the container (nothing else).
+- Do not try to bypass restrictions. If you can't fulfil your objective, just report back to the user.
+"""
+
 def format_response(decision: str, reason: str) -> str:
     return json.dumps({
         "hookSpecificOutput": {
@@ -36,11 +49,9 @@ def check_access(command: CommandLine, references: list[Reference], context: Con
     Generic, command-agnostic checks on the files and shape of a command.
     """
     decision, reason = check_file_rules(references, context.project_root, context.mode)
-    if decision is not Decision.ALLOW:
-        return (decision, f"`{command.base}`: {reason}" if command.base else reason)
-    if command.dynamic:
-        return (Decision.ASK, f"`{command.base or 'command'}` has a dynamically-computed part - cannot verify it.")
-    return (Decision.ALLOW, "")
+    if decision is Decision.ALLOW:
+        return (Decision.ALLOW, f"`{command.base}` is allowed" if command.base else "allowed")
+    return (decision, f"`{command.base}`: {reason}" if command.base else reason)
 
 def check_file_rules(references: list[Reference], project_root: Path, mode: Mode) -> tuple[Decision, str]:
     """
@@ -62,6 +73,15 @@ def check_file_rules(references: list[Reference], project_root: Path, mode: Mode
     if mode is Mode.MANUAL and (written_files := [x.text for x in expanded if x.access is Access.WRITE]):
         return (Decision.ASK, f"Writing {format_references(written_files)} in {mode.value} mode requires your validation.")
     return (Decision.ALLOW, "")
+
+def check_mode_rules(decision: Decision, reason: str, mode: Mode) -> tuple[Decision, str]:
+    """
+    The [Modes rules](rules.md#modes): in auto mode an `ask` becomes a `deny`,
+    since nobody is there to validate it. The `ask` reason is kept as context.
+    """
+    if decision is Decision.ASK and mode is Mode.AUTO:
+        return (Decision.DENY, AUTO_MODE_DENIAL.strip().format(reason=reason))
+    return (decision, reason)
 
 def worst(*verdicts: tuple[Decision, str]) -> tuple[Decision, str]:
     """

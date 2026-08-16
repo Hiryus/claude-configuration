@@ -3,13 +3,12 @@
 Gaps between `rules.md` and the current behavior. Rules that are correctly implemented are omitted, so the numbering has holes.
 
 **Loosening the sandbox** (the rest are stricter than the rule, or wrong in a harmless direction):
-- **Modes** (#1) — the whole section is unenforced: `ask` never becomes `deny` in auto mode.
 - **2.13/3.x** (#28) — `podman` is unknown, so `podman run --privileged` asks instead of denying.
 
 
 ## Modes
 
-1. [ ] Rule: in **auto** mode every **ask** becomes a **deny**. Current: **ask** stays **ask**, in both the file and the shell hook.
+1. [x] Rule: in **auto** mode every **ask** becomes a **deny**. Current: **ask** stays **ask**, in both the file and the shell hook.
 
 
 ## 1.1 No credentials access

@@ -1,7 +1,7 @@
 import json
 import sys
 
-from generic import check_file_rules, format_response
+from generic import check_file_rules, check_mode_rules, format_response
 from models.analyzer import Context, Decision
 from models.parsing import Access, Reference
 
@@ -12,7 +12,7 @@ def analyze(file_path:str, context:Context) -> tuple[Decision, str]:
     decision, reason = check_file_rules([reference], context.project_root, context.mode)
     if decision is Decision.ALLOW:
         return (decision, f"Accessing '{file_path}' in {context.mode.value} mode is allowed.")
-    return (decision, reason)
+    return check_mode_rules(decision, reason, context.mode)
 
 
 def main(input_data:dict) -> str:
@@ -20,8 +20,7 @@ def main(input_data:dict) -> str:
     if file_path is None:
         return format_response(Decision.DENY.value, "No file_path given.")
 
-    context = Context.of(input_data)
-    (decision, reason) = analyze(file_path, context)
+    (decision, reason) = analyze(file_path=file_path, context=Context.of(input_data))
     return format_response(decision.value, reason)
 
 

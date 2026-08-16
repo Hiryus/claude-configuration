@@ -14,7 +14,7 @@ FAKE_HOME = "/home/fakeuser"
 # Helpers
 # ============================================================================
 
-def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
+def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
@@ -24,7 +24,39 @@ def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
             "file_path": file_path,
         },
     })
-    return json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision")
+    return json.loads(result).get("hookSpecificOutput", {})
+
+def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
+    return output(file_path, tool_name, cwd, mode).get("permissionDecision")
+
+def reason(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
+    return output(file_path, tool_name, cwd, mode).get("permissionDecisionReason")
+
+# ============================================================================
+# Modes
+# ============================================================================
+
+def test_auto_mode_turns_ask_into_deny():
+    # Rule "Modes": no interactive validation in auto mode.
+    assert run(file_path="/elsewhere/notes.txt") == "ask"
+    assert run(file_path="/elsewhere/notes.txt", mode="bypassPermissions") == "deny"
+
+def test_auto_mode_deny_explains_the_mode_and_keeps_the_ask_reason():
+    denial = reason(file_path="/elsewhere/notes.txt", mode="bypassPermissions")
+    assert "auto mode" in denial
+    assert "outside the project" in denial
+
+@pytest.mark.parametrize("mode", ["default", "plan", "acceptEdits"])
+def test_other_modes_keep_asking(mode):
+    assert run(file_path="/elsewhere/notes.txt", mode=mode) == "ask"
+
+@pytest.mark.parametrize("tool_name", ["Read", "Write"])
+def test_auto_mode_keeps_allow(tool_name):
+    assert run(file_path="/proj/main.py", tool_name=tool_name, mode="bypassPermissions") == "allow"
+
+def test_auto_mode_keeps_the_deny_reason():
+    assert run(file_path="/proj/.env", mode="bypassPermissions") == "deny"
+    assert "secret" in reason(file_path="/proj/.env", mode="bypassPermissions")
 
 # ============================================================================
 # Secrets
