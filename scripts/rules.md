@@ -51,7 +51,7 @@ The agent is **allowed** to **read** files in the following locations, including
 
 In **edit mode**, the agent is **allowed** to **write** files in the following locations, including subfolders (with exceptions listed above):
 - The temporary directories (`/tmp`, `/var/tmp`, etc.),
-- The current project.
+- The current project (including the harness if it is the project directory - cf. §1.3).
 
 **Reason**: The agent aim is to update the project.
 It sometimes also uses temporary files for tests or downloads and may need to read the harness configuration.

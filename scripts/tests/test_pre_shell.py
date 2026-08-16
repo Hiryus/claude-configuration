@@ -14,7 +14,7 @@ ROOT = "/proj"
 # Helpers
 # ============================================================================
 
-def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
+def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
@@ -25,7 +25,13 @@ def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful descr
             "description": description,
         },
     })
-    return json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision")
+    return json.loads(result).get("hookSpecificOutput", {})
+
+def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
+    return output(command, tool_name, cwd, description, mode).get("permissionDecision")
+
+def reason(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
+    return output(command, tool_name, cwd, description, mode).get("permissionDecisionReason")
 
 # ============================================================================
 # Tool gating
@@ -33,6 +39,39 @@ def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful descr
 
 def test_non_bash_tool_denied():
     assert run(command="ls", tool_name="Powershell") == "deny"
+
+# ============================================================================
+# Modes
+# ============================================================================
+
+def test_auto_mode_turns_ask_into_deny():
+    # Rule "Modes": no interactive validation in auto mode.
+    assert run(command="docker login -u me registry.io") == "ask"
+    assert run(command="docker login -u me registry.io", mode="bypassPermissions") == "deny"
+
+def test_auto_mode_deny_explains_the_mode_and_keeps_the_ask_reason():
+    denial = reason(command="docker login -u me registry.io", mode="bypassPermissions")
+    assert "auto mode" in denial
+    assert "docker login" in denial
+
+def test_auto_mode_deny_keeps_the_file_ask_reason():
+    # An ask coming from the file rules is wrapped once, keeping its own reason.
+    denial = reason(command="cat /elsewhere/notes.txt", mode="bypassPermissions")
+    assert "outside the project" in denial
+    assert denial.count("auto mode") == 1
+
+@pytest.mark.parametrize("mode", ["default", "plan", "acceptEdits"])
+def test_other_modes_keep_asking(mode):
+    assert run(command="docker login -u me registry.io", mode=mode) == "ask"
+
+@pytest.mark.parametrize("cmd", ["ls", "echo x > notes.txt"])
+def test_auto_mode_keeps_allow(cmd):
+    # Auto mode allows the same calls as edit mode, writes included.
+    assert run(command=cmd, mode="bypassPermissions") == "allow"
+
+def test_auto_mode_keeps_the_deny_reason():
+    assert run(command="pip install requests", mode="bypassPermissions") == "deny"
+    assert "uv" in reason(command="pip install requests", mode="bypassPermissions")
 
 # ============================================================================
 # Description quality

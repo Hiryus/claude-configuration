@@ -3,7 +3,7 @@ import re
 import sys
 
 from analyzers import docker, find, git, grep, sed
-from generic import check_access, format_response, worst
+from generic import check_access, check_mode_rules, format_response, worst
 from models.analyzer import Context, Decision
 from models.grammar import CommandSyntax
 from models.parsing import Access, CommandLine, ParseError, Reference
@@ -122,7 +122,8 @@ def main(input_data:dict) -> str:
             return format_response(Decision.DENY.value, "Provide a meaningful, specific `description` for this command, explaining why it is required and what it does.")
         else:
             decision, reason = analyze(prompt, context)
-            return format_response(decision.value, reason)
+            decision, reason = check_mode_rules(decision, reason, context.mode)
+            return format_response(decision=decision.value, reason=reason)
     except ParseError as err:
         return format_response(Decision.DENY.value, f"Refusing to run an unparseable command: {err}")
 
