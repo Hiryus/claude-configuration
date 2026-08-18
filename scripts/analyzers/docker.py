@@ -176,7 +176,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     if invocation.has_arg(*DAEMON_FLAGS):
         reasons.append(f"`{invocation.command}` re-targets the client (daemon, config directory or TLS identity).")
 
-    if "compose" in invocation.path:
+    if "compose" in invocation.cmd_parts:
         references += [Reference(access=Access.READ, text=x) for x in invocation.values("file")]
         if unsafe := [x.key for x in invocation.options if x.name in COMPOSE_UNSAFE_FLAGS]:
             reasons.append(f"`{invocation.command}` uses the {unsafe} global options, which are not allowed by default.")
@@ -191,7 +191,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
 
     elif invocation.command in RUN_COMMANDS:
         mounts, unverified = parse_mount_ref(invocation)
-        allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_FLAGS if "compose" in invocation.path else [])
+        allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_FLAGS if "compose" in invocation.cmd_parts else [])
         if disallowed := [x.key for x in invocation.options if x.name not in allowed]:
             reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
         if unverified:
