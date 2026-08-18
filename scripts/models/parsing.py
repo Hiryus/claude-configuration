@@ -121,12 +121,12 @@ class Invocation:
     """
     A CommandLine parsed with a known grammar.
     """
-    arguments:list[Argument] = field(default_factory=list)
-    path:list[str] = field(default_factory=list) # canonical subcommand chain (ex: ["git", "commit"], ["docker", "container", "ls"])
+    arguments:list[Argument]
+    cmd_parts:list[str] # ex: ["git", "commit"], ["docker", "container", "ls"])
 
     @property
     def command(self) -> str:
-        return " ".join(self.path)
+        return " ".join(self.cmd_parts)
 
     @property
     def options(self) -> list[Argument]:
@@ -138,8 +138,8 @@ class Invocation:
 
     @property
     def subcommand(self) -> str|None:
-        if len(self.path) > 1:
-            return " ".join(self.path[1:])
+        if len(self.cmd_parts) > 1:
+            return " ".join(self.cmd_parts[1:])
         return None
 
     @property

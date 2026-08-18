@@ -41,7 +41,7 @@ def parse(command_line:CommandLine, syntax:CommandSyntax) -> Invocation:
             arguments.append(Argument(value=token.text, expansions=token.expansions))
             operand_seen = True
 
-    return Invocation(path=path, arguments=arguments)
+    return Invocation(cmd_parts=path, arguments=arguments)
 
 
 def parse_flag(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> list[Argument]:

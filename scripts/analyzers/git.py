@@ -66,7 +66,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     The `branch` and `config` verbs deviate: their tables list every read-only spelling, so anything untabled is a write and asks.
     """
     invocation = git.parse(command)
-    verb = invocation.path[1] if len(invocation.path) > 1 else None
+    verb = invocation.cmd_parts[1] if len(invocation.cmd_parts) > 1 else None
 
     # Deny GIT_DIR variable in the command and in the environment as it overrides the repository location.
     if any(x.name == "GIT_DIR" for x in command.assignments) or "GIT_DIR" in command.environment:
@@ -130,7 +130,7 @@ def validate_config(command:CommandLine, invocation:Invocation, context:Context)
     disallowed_args = [x for x in invocation.options if x.name not in CONFIG_READONLY_ARGS]
     if any(disallowed_args):
         return (Decision.ASK, f"`git config` requires the user validation when using {[x.key for x in disallowed_args]} flags.")
-    if len(invocation.path) > 2 and invocation.path[2] not in CONFIG_READONLY_VERBS:
+    if len(invocation.cmd_parts) > 2 and invocation.cmd_parts[2] not in CONFIG_READONLY_VERBS:
         return (Decision.ASK, f"The `{invocation.command}` command writes the git configuration and requires the user validation.")
     if len(invocation.positionals) > 1:
         return (Decision.ASK, "`git config` requires the user validation when setting a value.")
