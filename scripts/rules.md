@@ -81,7 +81,8 @@ A command line that does not carry a meaningful `description` explaining the int
 
 ### 2.3. Tracking current directory
 
-The `cd` command is **allowed** if the path is resolvable by the hook (ex: absolute or relative path, including simple and safe expansions like `~/`). It is **denied** if the path is NOT resolvable by the hook (ex: substitution or expansion like `$(...)`, `` `...` ``, `$VAR`, arithmetic, ...).
+The `cd` command is **allowed** if the path is resolvable by the hook (ex: absolute or relative path, including simple and safe expansions like `~/`) and exists.
+It is **denied** if the path is NOT resolvable by the hook (ex: substitution or expansion like `$(...)`, `` `...` ``, `$VAR`, arithmetic, ...) or if the path does not exist (that's an error).
 
 **Reason**: Knowing the current working directory is required to validate file access in case of relative path.
 For any sub-command, the hook must know with certainty the current working directory.
