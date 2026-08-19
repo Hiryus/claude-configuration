@@ -10,11 +10,17 @@ HOOK = "pre_file_access.py"
 ROOT = "/proj"
 FAKE_HOME = "/home/fakeuser"
 
+# `project_root` defaults to the `cwd` argument, which reproduces the behavior from
+# before cwd tracking exactly. `project_root=None` sends an empty environment, i.e.
+# CLAUDE_PROJECT_DIR unset -- so the sentinel cannot be None itself.
+SAME_AS_CWD = object()
+
 # ============================================================================
 # Helpers
 # ============================================================================
 
-def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
+def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+    root = cwd if project_root is SAME_AS_CWD else project_root
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
@@ -23,14 +29,14 @@ def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
         "tool_input": {
             "file_path": file_path,
         },
-    })
+    }, environ={"CLAUDE_PROJECT_DIR": root} if root is not None else {})
     return json.loads(result).get("hookSpecificOutput", {})
 
-def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
-    return output(file_path, tool_name, cwd, mode).get("permissionDecision")
+def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+    return output(file_path, tool_name, cwd, mode, project_root).get("permissionDecision")
 
-def reason(file_path:str, tool_name="Read", cwd=ROOT, mode="default"):
-    return output(file_path, tool_name, cwd, mode).get("permissionDecisionReason")
+def reason(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+    return output(file_path, tool_name, cwd, mode, project_root).get("permissionDecisionReason")
 
 # ============================================================================
 # Modes
@@ -156,7 +162,33 @@ def test_write_claude_dir_denied_outside_a_project_nested_in_it(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
     monkeypatch.setenv("USERPROFILE", FAKE_HOME)
     harness = Path(FAKE_HOME) / ".claude"
-    assert run(file_path=str(harness / "settings.json"), tool_name="Write", cwd=str(harness / "scripts")) == "deny"
+    scripts = harness / "scripts"
+    assert run(file_path=str(harness / "settings.json"), tool_name="Write", cwd=str(scripts), project_root=str(scripts)) == "deny"
+
+def test_harness_as_project_is_decided_by_the_project_root_not_the_cwd(monkeypatch):
+    # Rule 1.3's exception is about the *project* being the harness. The agent
+    # moving into a subdirectory does not shrink the project down to it.
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    harness = Path(FAKE_HOME) / ".claude"
+    target = str(harness / "settings.json")
+    assert run(file_path=target, tool_name="Write", cwd=str(harness / "scripts"), project_root=str(harness), mode="acceptEdits") == "allow"
+
+# ============================================================================
+# Context: the project root and the current directory are two different things
+# ============================================================================
+
+def test_missing_project_root_denied():
+    assert run(file_path="/proj/main.py", project_root=None) == "deny"
+    assert "CLAUDE_PROJECT_DIR" in reason(file_path="/proj/main.py", project_root=None)
+
+@pytest.mark.parametrize("cwd", ["", None])
+def test_missing_cwd_denied(cwd):
+    assert run(file_path="/proj/main.py", cwd=cwd) == "deny"
+
+def test_relative_path_is_anchored_on_the_cwd():
+    assert run(file_path="notes.txt", cwd="/proj/work", project_root="/proj") == "allow"
+    assert run(file_path="../../elsewhere/notes.txt", cwd="/proj/work", project_root="/proj") == "ask"
 
 def test_read_outside_claude_dir_still_asks(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
@@ -174,7 +206,7 @@ def test_missing_file_path_denied_for_safety():
         "hook_event_name": "PreToolUse",
         "tool_name": "Read",
         "tool_input": {},
-    })
+    }, environ={"CLAUDE_PROJECT_DIR": ROOT})
     assert json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
 
 # ============================================================================

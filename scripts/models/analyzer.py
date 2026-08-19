@@ -1,6 +1,10 @@
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from models.parsing import ContextError
 
 
 class Decision(Enum):
@@ -34,6 +38,8 @@ class Context:
     The ambient facts of one hook call, passed to every check so a rule can
     depend on the mode or the project boundary without re-reading the payload.
     """
+    current_cwd:Path = Path()      # current directory, moves with `cd`
+    previous_cwd:Path|None = None  # $OLDPWD, the target of `cd -`
     hook_event_name:str = ""
     intent:str = ""
     mode:Mode = Mode.MANUAL
@@ -41,11 +47,23 @@ class Context:
     tool_name:str = ""
 
     @staticmethod
-    def of(input_data: dict) -> "Context":
+    def of(input_data: dict, environ: Mapping[str, str] = os.environ) -> "Context":
+        """
+        Both directories are mandatory: guessing one from the other is exactly the
+        conflation this split removes, and would silently unbound the project.
+        Raises `ContextError` so the caller can refuse the call (rule 2.3).
+        """
+        cwd:str|None = input_data.get("cwd")
+        project_root:str|None = environ.get("CLAUDE_PROJECT_DIR")
+        if not cwd:
+            raise ContextError("the payload carries no `cwd`")
+        if not project_root:
+            raise ContextError("the `CLAUDE_PROJECT_DIR` environment variable is not set")
         return Context(
+            current_cwd=Path(cwd).resolve(),
             hook_event_name=input_data.get("hook_event_name", ""),
             intent=input_data.get("tool_input", {}).get("description") or "",
             mode=Mode.of(input_data.get("permission_mode", "default")),
-            project_root=Path(input_data.get("cwd", "")),
+            project_root=Path(project_root).resolve(),
             tool_name=input_data.get("tool_name", ""),
         )
