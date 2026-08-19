@@ -42,11 +42,13 @@ Until then, the bash analysis for claude code is described below.
 
 ### Bash analysis
 
-The analysis is done in four passes, detailed in [`scripts/parsing-spec.md`](scripts/parsing-spec.md):
-1. **Lexing** (`parsers/parse_bash.py`) turns the bash prompt into `CommandLine(program, args[], assignments[], redirects[])` objects, one per command, each word a `Token` tagged with the shell expansions it is built from. Grammar only, no policy.
-2. **Grammar** (`parsers/grammar.py`, `parsers/parse_arguments.py`) pairs a `CommandLine`'s words against a binary's `CommandSyntax` table (keys, flags, subcommands) into an `Invocation(path, arguments[], passthrough[])`. A binary with no table is still parsed, with every word an operand — this is not a fallback, it is what makes `--` safe by default. `find` is the documented exception: it is an expression grammar, not getopt, so it gets its own zone walker instead of a `CommandSyntax` table.
-3. **Scope** (`resolve_scope()`) propagates a bare assignment (`GIT_DIR=x; git log`) to the commands that follow it, filling `CommandLine.environment`. Detection only, never used to resolve a path.
-4. **Policy** (`parsers/parse_*.py`, `pre_shell.py`) matches the `Invocation` against the [specification rules](scripts/rules.md) to return a `Decision(ALLOW|ASK|DENY)` and a `reason(string)`. Each supported binary has its own `parsers/parse_*.py`; an unrecognised one is analyzed directly and usually asks for human validation.
+The analysis is done in four passes:
+1. **Lexing** (`parsers/bash.py`) turns the bash prompt into `CommandLine(program, args[], assignments[], redirects[])` objects, one per command, each word a `Token` tagged with the shell expansions it is built from. Grammar only, no policy.
+2. **Grammar** (`models/grammar.py`, `parsers/arguments.py`) pairs a `CommandLine`'s words against a binary's `CommandSyntax` table (aliases, flags, subcommands) into an `Invocation(cmd_parts[], arguments[])`. A binary with no table is still parsed, with every word an operand — this is not a fallback, it is what makes `--` safe by default. `find` is the documented exception: it is an expression grammar, not getopt, so it gets its own zone walker instead of a `CommandSyntax` table.
+3. **Scope** (`parsers/bash.py`) tags each command with the execution shape it sits in: the chain of enclosing isolation contexts (subshell, substitution, pipeline stage, `&`) and whether it is conditional. That is what lets `pre_shell.analyze()` fold the commands into a current directory, so a relative path is resolved against the directory the shell is really in (cf. [rule 2.3](scripts/rules.md#23-tracking-current-directory)). Propagating a bare assignment (`GIT_DIR=x; git log`) to the commands that follow belongs to this pass too, and is not implemented yet.
+4. **Policy** (`analyzers/*.py`, `pre_shell.py`) matches the `Invocation` against the [specification rules](scripts/rules.md) to return a `Decision(ALLOW|ASK|DENY)` and a `reason(string)`. Each supported binary has its own `analyzers/*.py`; an unrecognised one is analyzed directly and usually asks for human validation.
+
+Two directories are threaded through every check and must not be confused: the **current directory** (`Context.cwd`, from the payload) anchors relative paths and moves with `cd`, while the **project directory** (`Context.project_root`, from `CLAUDE_PROJECT_DIR`) is the perimeter of the file rules and is fixed for the whole call. Both are mandatory: the hook denies the call when it cannot read either.
 
 ## Useful links
 

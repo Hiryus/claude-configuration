@@ -32,7 +32,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 ## 2.3 Tracking current directory
 
-7. [ ] Rule: `cd` is allowed when the path is resolvable, denied only when it is not. Current: every `cd` is denied, resolvable or not.
+7. [x] Rule: `cd` is allowed when the path is resolvable, denied only when it is not. Current: every `cd` is denied, resolvable or not.
 
 
 ## 2.7 Alternative binaries

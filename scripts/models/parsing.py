@@ -3,11 +3,22 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 # ============================================================================
-# Generic types
+# Custom errors
 # ============================================================================
 
+class ContextError(Exception):
+    """
+    The hook cannot establish the ambient facts of the call (project root, current directory).
+    """
+
 class ParseError(Exception):
-    pass
+    """
+    The hook cannot parse the command line (usually means the call uses an invalid syntax).
+    """
+
+# ============================================================================
+# Generic types
+# ============================================================================
 
 class Access(StrEnum):
     """
@@ -68,13 +79,16 @@ class Reference:
 @dataclass
 class CommandLine:
     """
-    One parsed command: its program, argument words, prefix assignments and redirects.
+    One parsed command: its program, argument words, prefix assignments and redirects,
+    plus where it sits in the shell's execution shape (grammar only, no policy).
     """
     program:Token
     args:list[Token] = field(default_factory=list)
     assignments:list[Assignment] = field(default_factory=list)
+    conditional:bool = False    # may or may not run: `if`/`for`/`while` body, or right of `&&`/`||`
     redirects:list[Redirect] = field(default_factory=list)
     environment:dict[str, Token] = field(default_factory=dict)
+    scope:tuple[int,...] = ()   # enclosing isolation scopes (subshell, substitution, pipeline stage, `&`); () is the caller's own shell
 
     @property
     def base(self) -> str:

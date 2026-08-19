@@ -1,13 +1,20 @@
 import glob
 import os
-import re
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from models.parsing import Access, Reference
 
+# Three groups live here, and the parameter says which one a helper belongs to:
+#   - the anchoring helpers take `cwd`         -- they turn a written path into a real one,
+#   - the boundary helpers take `project_root` -- they answer "is this ours?",
+#   - the classifiers take a standardized path -- they answer "what kind of file is this?".
+# A classifier must never see raw text: `cd .git && echo x > config` would defeat rule 1.2.
 
-def expand_glob(path_text: str, project_root: Path) -> list[Path] | None:
+StandardPath = Path | PurePosixPath
+
+
+def expand_glob(path_text: str, cwd: Path) -> list[Path] | None:
     """
     Expand a glob to the concrete paths it currently matches, using bash's default semantics (no globstar, no dotglob): `*` and `**` don't cross a `/` on their own, and a leading `*` skips dotfiles unless the pattern segment itself starts with `.`.
 
@@ -19,12 +26,12 @@ def expand_glob(path_text: str, project_root: Path) -> list[Path] | None:
     """
     if any(ch in path_text for ch in "{}()"):
         return None
-    anchored = standardize(path_text, project_root)
+    anchored = standardize(path_text, cwd)
     if not isinstance(anchored, Path):
         return None
     return [Path(match) for match in glob.glob(str(anchored), recursive=False)]
 
-def expand_references(references: list[Reference], project_root: Path) -> list[Reference]:
+def expand_references(references: list[Reference], cwd: Path) -> list[Reference]:
     """
     Replace every glob reference with the concrete paths it matches.
     A pattern that cannot be trusted is kept as-is, so it is later reported as an unresolved glob rather than silently vetted as a literal name.
@@ -34,7 +41,7 @@ def expand_references(references: list[Reference], project_root: Path) -> list[R
         if not has_glob(ref.text):
             expanded.append(ref)
             continue
-        matches = expand_glob(ref.text, project_root)
+        matches = expand_glob(ref.text, cwd)
         if matches is None:
             expanded.append(ref)  # can't trust expansion -- keep as unresolved glob
         elif not matches and ref.access is Access.WRITE:
@@ -51,54 +58,60 @@ def has_glob(path_text: str) -> bool:
     """
     return any(ch in path_text for ch in "*?[{}()")
 
-def in_project(path_text: str, project_root: Path) -> bool:
-    return standardize(path_text, project_root).is_relative_to(project_root)
+def in_project(path: StandardPath, project_root: Path) -> bool:
+    return path.is_relative_to(project_root)
 
-def is_claude_dir(path_text: str, project_root: Path) -> bool:
-    path = standardize(path_text, project_root)
+def is_claude_dir(path: StandardPath) -> bool:
     if not isinstance(path, Path):
         return False
     return path.is_relative_to(Path.home() / ".claude")
 
-def is_git_dir(path_text: str, project_root: Path) -> bool:
-    return bool(re.search(r"(?i)(?:^|[\\/])\.git(?:[\\/]|$)", path_text))
+def is_git_dir(path: StandardPath) -> bool:
+    """
+    True for the `.git` directory itself and anything under it, at any depth.
+    Matched on the standardized parts rather than the written text: `cd .git; echo x > config` writes a git file too.
+    """
+    return any(part.lower() == ".git" for part in path.parts)
 
-def is_secret(path_text: str, project_root: Path) -> bool:
-    # Windows ignores ending dot
-    path = Path(path_text.rstrip(".") ) if sys.platform == "win32" else Path(path_text)
-    if path.name.lower().endswith((".example", ".sample", ".template")):
+def is_secret(path: StandardPath) -> bool:
+    name = path.name.lower()
+    if sys.platform == "win32":
+        name = name.rstrip(".")  # Windows ignores a trailing dot, so ".env." opens ".env"
+    if name.endswith((".example", ".sample", ".template")):
         return False
-    if path.suffix.lower() in [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"]:
+    if os.path.splitext(name)[1] in [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"]:
         return True
-    if path.name.lower() in [".env", ".env.local", ".env.prod", ".env.production"]:
+    if name in [".env", ".env.local", ".env.prod", ".env.production"]:
         return True
-    if path.name.lower() in [".htpasswd", ".netrc", ".npmrc", ".pgpass"]:
+    if name in [".htpasswd", ".netrc", ".npmrc", ".pgpass"]:
         return True
     if any(part.lower() == ".ssh" for part in path.parts):
         return True
-    return path.name.lower() in ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]
+    return name in ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]
 
-def is_tmp_file(path_text: str, project_root: Path) -> bool:
-    path = standardize(path_text, project_root)
+def is_tmp_file(path: StandardPath) -> bool:
     if sys.platform == "win32" and path.is_relative_to(Path(os.path.expandvars("%LOCALAPPDATA%\\Temp"))):
         return True
     if sys.platform == "win32" and path.is_relative_to(Path("C:\\Windows\\Temp")):
         return True
     return path.is_relative_to(PurePosixPath("/tmp")) or path.is_relative_to(PurePosixPath("/var/tmp")) or path.is_relative_to(PurePosixPath("/dev/null"))
 
-def is_file_access_allowed(path_text: str, project_root: Path, read: bool) -> bool:
+def is_file_access_allowed(path: StandardPath, project_root: Path, read: bool) -> bool:
     """
     True for locations that don't need to prompt the user for an
     out-of-project access: inside the project, a tmp file, or (read-only)
     inside ~/.claude.
     """
-    if in_project(path_text, project_root):
+    if in_project(path, project_root):
         return True
-    if is_tmp_file(path_text, project_root):
+    if is_tmp_file(path):
         return True
-    return read and is_claude_dir(path_text, project_root)
+    return read and is_claude_dir(path)
 
-def standardize(path_text: str, project_root: Path) -> Path|PurePosixPath:
+def standardize(path_text: str, cwd: Path) -> StandardPath:
+    """
+    Turn a written path into the real one it designates, anchoring a relative path on the current directory (which moves with `cd`, cf. rule 2.3) -- not on the project root.
+    """
     # Resolve variables (order matters)
     path_text = os.path.expandvars(path_text)
     path_text = os.path.expanduser(path_text)
@@ -112,6 +125,6 @@ def standardize(path_text: str, project_root: Path) -> Path|PurePosixPath:
         return path
     # Handle normal paths
     if not os.path.isabs(path_text):
-        return (project_root / path_text).resolve()
+        return (cwd / path_text).resolve()
     else:
         return Path(path_text).resolve()

@@ -10,11 +10,17 @@ from pre_shell import main
 HOOK = "pre_shell.py"
 ROOT = "/proj"
 
+# `project_root` defaults to the `cwd` argument, which reproduces the behavior from
+# before cwd tracking exactly. `project_root=None` sends an empty environment, i.e.
+# CLAUDE_PROJECT_DIR unset -- so the sentinel cannot be None itself.
+SAME_AS_CWD = object()
+
 # ============================================================================
 # Helpers
 # ============================================================================
 
-def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
+def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+    root = cwd if project_root is SAME_AS_CWD else project_root
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
@@ -24,14 +30,14 @@ def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful de
             "command": command,
             "description": description,
         },
-    })
+    }, environ={"CLAUDE_PROJECT_DIR": root} if root is not None else {})
     return json.loads(result).get("hookSpecificOutput", {})
 
-def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
-    return output(command, tool_name, cwd, description, mode).get("permissionDecision")
+def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+    return output(command, tool_name, cwd, description, mode, project_root).get("permissionDecision")
 
-def reason(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default"):
-    return output(command, tool_name, cwd, description, mode).get("permissionDecisionReason")
+def reason(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+    return output(command, tool_name, cwd, description, mode, project_root).get("permissionDecisionReason")
 
 # ============================================================================
 # Tool gating
@@ -87,7 +93,7 @@ def test_missing_description_denied():
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
         "tool_input": {"command": "ls"},
-    })
+    }, environ={"CLAUDE_PROJECT_DIR": ROOT})
     assert json.loads(result).get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
 
 def test_meaningful_description_allowed():
@@ -120,7 +126,7 @@ def test_assignment_only_allowed():
     "cmd /c dir",
     "git -C /x status",
     "git -c foo=bar status",
-    "cd /somewhere",
+    "cd /somewhere",  # rule 2.3: the target does not exist
 ])
 def test_denied_commands(cmd):
     assert run(command=cmd) == "deny"
@@ -754,6 +760,194 @@ def test_glob_extglob_syntax_not_silently_allowed(tmp_path):
     # than reach the glob-uncertainty path (ask) -- either is acceptably safe.
     (tmp_path / "a.py").touch()
     assert run(command="cat !(a).py", cwd=str(tmp_path)) != "allow"
+
+# ============================================================================
+# Context: the project root and the current directory are two different things
+# ============================================================================
+
+def test_missing_project_root_denied():
+    # Step 0: CLAUDE_PROJECT_DIR is mandatory. Missing means the project boundary is
+    # unknown, and guessing it from the cwd is exactly the conflation cwd tracking removes.
+    assert run(command="ls", project_root=None) == "deny"
+    assert "CLAUDE_PROJECT_DIR" in reason(command="ls", project_root=None)
+
+@pytest.mark.parametrize("cwd", ["", None])
+def test_missing_cwd_denied(cwd):
+    assert run(command="ls", cwd=cwd) == "deny"
+
+def test_relative_path_is_anchored_on_the_cwd_not_the_project_root(tmp_path):
+    # The glob only matches from `work`, so a match proves the anchor is the cwd.
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "server.pem").touch()
+    assert run(command="cat *.pem", cwd=str(work), project_root=str(tmp_path)) == "deny"
+    assert run(command="cat *.pem", cwd=str(tmp_path), project_root=str(tmp_path)) == "allow"
+
+def test_project_boundary_is_the_project_root_not_the_cwd():
+    # A file above the cwd but still inside the project needs no validation;
+    # the same file is external as soon as the project root really is the cwd.
+    assert run(command="cat ../notes.txt", cwd="/proj/work", project_root="/proj") == "allow"
+    assert run(command="cat ../notes.txt", cwd="/proj/work", project_root="/proj/work") == "ask"
+
+# ============================================================================
+# cd -- resolution (rule 2.3)
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", ["cd /tmp", "cd /tmp/", "cd -P /tmp", "cd -L /tmp", "cd -- /tmp", "cd", "cd ~"])
+def test_cd_resolvable_target_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "cd $HOME",          # parameter expansion
+    "cd $(pwd)",         # command substitution
+    "cd `pwd`",          # backtick substitution
+    "cd /nonexistent",   # not a directory
+    "cd -e /tmp",        # untabled option
+    "cd /tmp /var",      # more than one operand
+])
+def test_cd_unresolvable_target_denied(cmd):
+    assert run(command=cmd) == "deny"
+
+def test_cd_relative_target_allowed(tmp_path):
+    (tmp_path / "sub").mkdir()
+    assert run(command="cd sub", cwd=str(tmp_path)) == "allow"
+
+def test_cd_outside_the_project_allowed():
+    # Decided: the `cd` itself discloses nothing, and every later access is still
+    # path-checked against the unchanged project root.
+    assert run(command="cd /tmp") == "allow"
+
+def test_cd_does_not_move_the_project_boundary():
+    assert run(command="cd /tmp; cat /tmp/../etc/passwd") == "ask"
+
+def test_cd_redirect_is_still_checked():
+    # The `cd` verdict may not vouch for what the command writes on its way.
+    assert run(command="cd /tmp > .env") == "deny"
+
+# ============================================================================
+# cd -- the current directory anchors the later commands
+# ============================================================================
+
+def test_cd_moves_the_anchor_of_the_next_commands(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "server.pem").touch()
+    assert run(command="cat *.pem", cwd=str(tmp_path)) == "allow"          # nothing matches at the root
+    assert run(command="cd sub; cat *.pem", cwd=str(tmp_path)) == "deny"   # ... but the secret matches in `sub`
+
+def test_cd_left_of_and_still_anchors_the_right_side(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "server.pem").touch()
+    assert run(command="cd sub && cat *.pem", cwd=str(tmp_path)) == "deny"
+
+def test_cd_out_of_the_project_makes_relative_paths_external():
+    # `/` is a real directory outside the project, and not one of the exempted
+    # locations, so the file the shell would now read needs validation.
+    assert run(command="cat notes.txt") == "allow"
+    assert run(command="cd /; cat notes.txt") == "ask"
+
+def test_cd_into_git_dir_does_not_defeat_the_git_rule(tmp_path):
+    # Step 2 regression guard: `is_git_dir` used to match the written text, so moving
+    # the shell into `.git` first hid the git file behind a plain name.
+    (tmp_path / ".git").mkdir()
+    assert run(command="cd .git; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
+
+def test_cd_into_ssh_dir_does_not_defeat_the_secret_rule(tmp_path):
+    (tmp_path / ".ssh").mkdir()
+    assert run(command="cd .ssh; cat known_hosts", cwd=str(tmp_path)) == "deny"
+
+# ============================================================================
+# cd -- scope isolation
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "(cd .git); echo x > config",        # subshell
+    "echo $(cd .git); echo x > config",  # command substitution
+    "echo `cd .git`; echo x > config",   # backtick substitution
+    "cd .git | cat; echo x > config",    # pipeline stage
+    "cd .git & echo x > config",         # async segment
+])
+def test_isolated_cd_does_not_leak_out(tmp_path, cmd):
+    (tmp_path / ".git").mkdir()
+    assert run(command=cmd, cwd=str(tmp_path), mode="acceptEdits") == "allow"
+
+def test_isolated_cd_still_applies_inside_its_own_scope(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert run(command="(cd .git; echo x > config)", cwd=str(tmp_path), mode="acceptEdits") == "deny"
+
+def test_group_is_not_a_subshell(tmp_path):
+    # `{ ...; }` runs in the current shell, so its `cd` does leak out -- unlike `( ... )`.
+    (tmp_path / ".git").mkdir()
+    assert run(command="{ cd .git; }; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
+
+# ============================================================================
+# cd -- conditional contexts are refused
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "test -d /tmp && cd /tmp",           # runs only if the left side succeeded
+    "ls || cd /tmp",                     # runs only if the left side failed
+    "if test -d /tmp; then cd /tmp; fi", # did it run?
+    "for f in *; do cd /tmp; done",      # how many times?
+    "while ls; do cd /tmp; done",
+    "until ls; do cd /tmp; done",
+    "f() { cd /tmp; }",                  # runs when the function is called, not here
+    "case x in x) cd /tmp;; esac",       # bashlex cannot parse `case` at all (rule 2.1)
+])
+def test_conditional_cd_denied(cmd):
+    assert run(command=cmd) == "deny"
+
+def test_function_body_cd_does_not_move_the_tracked_directory(tmp_path):
+    # The body does not run where it is written: folding its `cd` in would let
+    # `f() { cd /tmp; }` talk the hook out of the directory the shell is really in.
+    (tmp_path / ".git").mkdir()
+    assert run(command="cd .git; f() { cd /tmp; }; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
+
+def test_conditional_cd_denial_names_the_way_out():
+    assert "plain sequence" in reason(command="test -d /tmp && cd /tmp")
+
+def test_conditional_tag_does_not_gate_the_other_commands():
+    # `conditional` is grammar: only the `cd` rule reads it. Everything else is
+    # checked exactly as it would be outside the conditional.
+    assert run(command="if ls; then cat .env; fi") == "deny"
+    assert run(command="if ls; then ls; fi") == "allow"
+
+# ============================================================================
+# cd - (the previous directory)
+# ============================================================================
+
+def test_cd_dash_goes_back_to_the_previous_directory(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert run(command="cd .git; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
+    assert run(command="cd .git; cd -; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "allow"
+
+def test_cd_dash_without_a_tracked_previous_denied():
+    # The payload carries no OLDPWD, so the target is simply unknown.
+    assert run(command="cd -") == "deny"
+
+def test_cd_dash_does_not_see_a_subshells_previous_directory():
+    assert run(command="(cd /tmp); cd -") == "deny"
+
+def test_cd_dash_dash_dash_is_an_operand_not_the_previous_directory():
+    # `cd -- -` means "the directory named -", which does not exist here.
+    assert run(command="cd -- -") == "deny"
+
+# ============================================================================
+# Commands that would desync the tracking (rule 2.3)
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "pushd /tmp",
+    "popd",
+    "exec ls",
+    "eval ls",
+    "source env.sh",
+    ". env.sh",
+    "source /tmp/env.sh",
+])
+def test_directory_desyncing_commands_denied(cmd):
+    assert run(command=cmd) == "deny"
 
 # ============================================================================
 # Containers (docker / podman)
