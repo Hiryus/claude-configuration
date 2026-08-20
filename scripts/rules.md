@@ -83,30 +83,27 @@ A command line that does not carry a meaningful `description` explaining the int
 
 The `cd` command is **allowed** if the path is resolvable by the hook (ex: absolute or relative path, including simple and safe expansions like `~/`) and exists.
 It is **denied** if the path is NOT resolvable by the hook (ex: substitution or expansion like `$(...)`, `` `...` ``, `$VAR`, arithmetic, ...) or if the path does not exist (that's an error).
+
 Moving outside the project is **allowed**: the move itself discloses nothing, and every later access is still checked against the unchanged project directory.
 
 A `cd` in a **conditional** context is **denied**, because whether it runs cannot be known statically:
-- inside an `if`, `for`, `while` or `until` body,
-- inside a function body, which runs when the function is called, not where it is written,
-- on the right of a `&&` or a `||` (`test -d x && cd x`).
-A `cd` on the *left* of a `&&` is fine (`cd x && cmd`): its target has already been verified to exist, so it succeeds.
+- Inside an `if`, `for`, `while` or `until` body,
+- Inside a function body, which runs when the function is called, not where it is written,
+- On the right of a `&&` or a `||` (`test -d x && cd x`).
 
-A `cd` in an **isolated** context only moves the current directory *inside that context*, and the move is discarded when it ends:
-- a subshell `( ... )` — but not a group `{ ...; }`, which runs in the current shell,
-- a command substitution `$(...)` or `` `...` ``, and a process substitution `<(...)`,
-- each stage of a pipeline,
-- an asynchronous segment (`... &`).
+A `cd` on the *left* of a `&&` is fine (ex: `cd x && cmd`): its target has already been verified to exist, so it succeeds.
 
-The `cd -` form is **allowed** once a previous directory has been tracked in the enclosing contexts, and **denied** before that.
-The previous directory follows the same rules as the current one: it is inherited on entry and discarded on exit of an isolated context.
+A `cd` in an isolated context only moves the current directory *inside that context*, and the move is discarded when it ends, for example:
+- A subshell `( ... )` (but not a group `{ ...; }`, which runs in the current shell),
+- A command substitution `$(...)` or `` `...` ``, and a process substitution `<(...)`,
+- An asynchronous segment (`... &`).
 
-The `pushd`, `popd`, `exec`, `eval`, `source` and `.` commands are **denied**: the first two move the current directory through a stack the hook does not follow, and the last four hand over commands it cannot analyze — a sourced script runs in the current shell, so it can change the current directory too.
-
-Finally, the hook **denies** the call outright when it cannot read the project directory (`CLAUDE_PROJECT_DIR`) or the current directory (the payload `cwd`).
+The `pushd` and `popd` commands are **denied**: they move the current directory through a stack the hook does not follow.
 
 **Reason**: Knowing the current working directory is required to validate file access in case of relative path.
 For any sub-command, the hook must know with certainty the current working directory.
-The current directory and the project directory are two different things: the first anchors relative paths and moves with `cd`, the second is the perimeter of the [File rules](#1-file-rules) and never moves during a call. Deducing one from the other would let the agent redefine its own perimeter with a single `cd`.
+
+NB: The current directory and the project directory are two different things: the first anchors relative paths and moves with `cd`, the second is the perimeter of the [File rules](#1-file-rules) and never moves during a call.
 
 ### 2.4. Variable assignment
 
@@ -140,6 +137,8 @@ Also, the agent will only be able to bypass the access rules inside the project 
 ### 2.6. Sub-shells
 
 Spawning a new shell (`bash`, `sh`, `zsh`, `cmd`, `powershell`, etc.) is **denied**.
+
+The `exec`, `eval`, `source` and `.` commands are also **denied**.
 
 **Reason**: Nesting shells is hard to read, debug, and parse while not being required at all most of the time.
 

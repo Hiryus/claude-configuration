@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from models.analyzer import Context, Decision, Mode
 from models.parsing import Access, CommandLine, Reference
@@ -7,9 +8,9 @@ from utils.filesystem import (
     has_glob,
     in_project,
     is_claude_dir,
-    is_file_access_allowed,
     is_git_dir,
     is_secret,
+    is_tmp_file,
     standardize,
 )
 from utils.format import format_references
@@ -73,6 +74,8 @@ def check_file_rules(references: list[Reference], context: Context) -> tuple[Dec
         return (Decision.ASK, f"{format_references(glob_files)} looks like a glob pattern; cannot statically verify which files it matches.")
     if external_files := [ref.text for ref, path in resolved if not is_file_access_allowed(path, context.project_root, read=ref.access is Access.READ)]:
         return (Decision.ASK, f"Accessing {format_references(external_files)} outside the project requires your validation.")
+    if external_files := [ref.text for ref, path in resolved if not is_file_access_allowed(path, context.project_root, read=ref.access is Access.READ)]:
+        return (Decision.ASK, f"Accessing {format_references(external_files)} outside the project requires your validation.")
     if context.mode is Mode.MANUAL and (written_files := [ref.text for ref, _ in resolved if ref.access is Access.WRITE]):
         return (Decision.ASK, f"Writing {format_references(written_files)} in {context.mode.value} mode requires your validation.")
     return (Decision.ALLOW, "")
@@ -85,6 +88,19 @@ def check_mode_rules(decision: Decision, reason: str, mode: Mode) -> tuple[Decis
     if decision is Decision.ASK and mode is Mode.AUTO:
         return (Decision.DENY, AUTO_MODE_DENIAL.strip().format(reason=reason))
     return (decision, reason)
+
+def is_file_access_allowed(path: Path, project_root: Path, read: bool) -> bool:
+    """
+    True for locations that don't need to prompt the user for an out-of-project access:
+    - A tmp file,
+    - Inside the project,
+    - The agent harness onlye in read mode.
+    """
+    if in_project(path, project_root):
+        return True
+    if is_tmp_file(path):
+        return True
+    return read and is_claude_dir(path)
 
 def worst(*verdicts: tuple[Decision, str]) -> tuple[Decision, str]:
     """

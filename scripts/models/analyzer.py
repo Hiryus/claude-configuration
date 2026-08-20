@@ -35,8 +35,7 @@ class Mode(Enum):
 @dataclass(frozen=True)
 class Context:
     """
-    The ambient facts of one hook call, passed to every check so a rule can
-    depend on the mode or the project boundary without re-reading the payload.
+    The ambient facts of one hook call.
     """
     current_cwd:Path = Path()      # current directory, moves with `cd`
     previous_cwd:Path|None = None  # $OLDPWD, the target of `cd -`
@@ -48,11 +47,6 @@ class Context:
 
     @staticmethod
     def of(input_data: dict, environ: Mapping[str, str] = os.environ) -> "Context":
-        """
-        Both directories are mandatory: guessing one from the other is exactly the
-        conflation this split removes, and would silently unbound the project.
-        Raises `ContextError` so the caller can refuse the call (rule 2.3).
-        """
         cwd:str|None = input_data.get("cwd")
         project_root:str|None = environ.get("CLAUDE_PROJECT_DIR")
         if not cwd:

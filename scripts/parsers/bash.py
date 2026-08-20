@@ -15,6 +15,7 @@ from models.parsing import (
     Token,
 )
 
+# TODO: transform into a class for better readability
 Tagged = tuple[bashlex.ast.node, tuple[int,...], bool]
 
 # ============================================================================
@@ -116,7 +117,8 @@ def expansions_of(node:bashlex.ast.node|None) -> frozenset[Expansion]:
 
 def is_subshell(node:bashlex.ast.node) -> bool:
     """
-    True for `( ... )`, false for `{ ...; }`: both are "compound" nodes, but only the first one forks, and bashlex tells them apart by the reserved word it opens with.
+    Return whether `node` is a subshell, i.e. whether it forks a new process to run its children.
+    Ex: true for `( ... )`, false for `{ ...; }`
     """
     opening = next(iter(getattr(node, "list", [])), None)
     return getattr(opening, "word", "") == "("
@@ -124,7 +126,7 @@ def is_subshell(node:bashlex.ast.node) -> bool:
 
 def tag_children(node:bashlex.ast.node, scope:tuple[int,...], conditional:bool, scopes:"itertools.count") -> list[Tagged]:
     """
-    The children of `node`, each carrying the scope and conditionality it runs under.
+    Return the children of `node` with its scope and conditionality.
     """
     kind = getattr(node, "kind", None)
     if kind == "list":
@@ -144,8 +146,8 @@ def tag_children(node:bashlex.ast.node, scope:tuple[int,...], conditional:bool, 
 def tag_list(node:bashlex.ast.node, scope:tuple[int,...], conditional:bool, scopes:"itertools.count") -> list[Tagged]:
     """
     Walk a `;`/`&`/`&&`/`||` sequence, left to right:
-    - after a `&&` or a `||`, a command runs only if the previous one succeeded (resp. failed), so it is conditional until the next `;` closes the chain;
-    - a `&` sends everything since the last separator to the background, i.e. into its own subshell, so that whole segment is re-tagged with a fresh scope.
+    - After a `&&` or a `||`, a command runs only if the previous one succeeded (resp. failed), so it is conditional until the next `;` closes the chain;
+    - A `&` sends everything since the last separator to the background, i.e. into its own subshell, so that whole segment is re-tagged with a fresh scope.
     """
     pending = conditional
     segment:list[int] = [] # indices in `tagged` of the commands since the last `;`/`&`

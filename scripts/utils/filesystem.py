@@ -5,14 +5,6 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from models.parsing import Access, Reference
 
-# Three groups live here, and the parameter says which one a helper belongs to:
-#   - the anchoring helpers take `cwd`         -- they turn a written path into a real one,
-#   - the boundary helpers take `project_root` -- they answer "is this ours?",
-#   - the classifiers take a standardized path -- they answer "what kind of file is this?".
-# A classifier must never see raw text: `cd .git && echo x > config` would defeat rule 1.2.
-
-StandardPath = Path | PurePosixPath
-
 
 def expand_glob(path_text: str, cwd: Path) -> list[Path] | None:
     """
@@ -58,22 +50,22 @@ def has_glob(path_text: str) -> bool:
     """
     return any(ch in path_text for ch in "*?[{}()")
 
-def in_project(path: StandardPath, project_root: Path) -> bool:
+def in_project(path: Path, project_root: Path) -> bool:
     return path.is_relative_to(project_root)
 
-def is_claude_dir(path: StandardPath) -> bool:
+def is_claude_dir(path: Path) -> bool:
     if not isinstance(path, Path):
         return False
     return path.is_relative_to(Path.home() / ".claude")
 
-def is_git_dir(path: StandardPath) -> bool:
+def is_git_dir(path: Path) -> bool:
     """
     True for the `.git` directory itself and anything under it, at any depth.
     Matched on the standardized parts rather than the written text: `cd .git; echo x > config` writes a git file too.
     """
     return any(part.lower() == ".git" for part in path.parts)
 
-def is_secret(path: StandardPath) -> bool:
+def is_secret(path: Path) -> bool:
     name = path.name.lower()
     if sys.platform == "win32":
         name = name.rstrip(".")  # Windows ignores a trailing dot, so ".env." opens ".env"
@@ -89,42 +81,30 @@ def is_secret(path: StandardPath) -> bool:
         return True
     return name in ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]
 
-def is_tmp_file(path: StandardPath) -> bool:
+def is_tmp_file(path: Path) -> bool:
     if sys.platform == "win32" and path.is_relative_to(Path(os.path.expandvars("%LOCALAPPDATA%\\Temp"))):
         return True
     if sys.platform == "win32" and path.is_relative_to(Path("C:\\Windows\\Temp")):
         return True
     return path.is_relative_to(PurePosixPath("/tmp")) or path.is_relative_to(PurePosixPath("/var/tmp")) or path.is_relative_to(PurePosixPath("/dev/null"))
 
-def is_file_access_allowed(path: StandardPath, project_root: Path, read: bool) -> bool:
+def standardize(input_path: str, cwd: Path) -> Path:
     """
-    True for locations that don't need to prompt the user for an
-    out-of-project access: inside the project, a tmp file, or (read-only)
-    inside ~/.claude.
-    """
-    if in_project(path, project_root):
-        return True
-    if is_tmp_file(path):
-        return True
-    return read and is_claude_dir(path)
-
-def standardize(path_text: str, cwd: Path) -> StandardPath:
-    """
-    Turn a written path into the real one it designates, anchoring a relative path on the current directory (which moves with `cd`, cf. rule 2.3) -- not on the project root.
+    Turn a written path into the real one it designates, anchoring a relative path on the current directory (which moves with `cd`).
     """
     # Resolve variables (order matters)
-    path_text = os.path.expandvars(path_text)
-    path_text = os.path.expanduser(path_text)
+    input_path = os.path.expandvars(input_path)
+    input_path = os.path.expanduser(input_path)
     # Handle POSIX paths on Windows
-    if sys.platform == "win32" and path_text.startswith("/"):
-        path_text = os.path.normpath(path_text)
-        path = PurePosixPath(PureWindowsPath(path_text).as_posix())
+    if sys.platform == "win32" and input_path.startswith("/"):
+        input_path = os.path.normpath(input_path)
+        path = PurePosixPath(PureWindowsPath(input_path).as_posix())
         # Special case to convert CYGWIN paths like "/c/..." to Windows paths "C:\..."
         if len(path.parts) >= 2 and path.parts[0] == "/" and len(path.parts[1]) == 1 and path.parts[1].isalpha():
             return Path(f"{path.parts[1].upper()}:\\", *path.parts[2:])
-        return path
+        return Path(path)
     # Handle normal paths
-    if not os.path.isabs(path_text):
-        return (cwd / path_text).resolve()
+    if not os.path.isabs(input_path):
+        return (cwd / input_path).resolve()
     else:
-        return Path(path_text).resolve()
+        return Path(input_path).resolve()
