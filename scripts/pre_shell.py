@@ -96,8 +96,7 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
 
 def inherited(state_by_scope: dict[tuple[int,...], tuple[Path, Path|None]], scope: tuple[int,...]) -> tuple[Path, Path|None]:
     """
-    The directory state a command in `scope` sees: the one of its nearest enclosing scope.
-    Walking the prefixes outwards *is* the "inherit on entry, discard on exit" rule -- a scope tuple never recurs, so what a subshell did to its own entry simply stops being reachable once the walk leaves it. No explicit stack needed.
+    Return the directory state for a given scope, walking outwards to find the nearest enclosing scope with a known state.
     """
     for depth in range(len(scope), -1, -1):
         if state := state_by_scope.get(scope[:depth]):
@@ -107,7 +106,7 @@ def inherited(state_by_scope: dict[tuple[int,...], tuple[Path, Path|None]], scop
 def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
     """
     Analyze every command in the prompt, then emit one aggregated decision.
-    Each command's verdict is the most severe of its generic (file-access) and
+    Each command verdict is the most severe of its generic (file-access) and 
     command-specific checks; the whole prompt is the most severe of those.
 
     The walk is a fold over the position-sorted commands, keyed by scope: a `cd`
@@ -124,8 +123,6 @@ def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
         if not command.base: # assignment only, ex: FOO=bar
             results.append((Decision.ALLOW, "Assignment is allowed."))
         elif command.base == "cd":
-            # `cd` still redirects like any other command, and its own verdict may not vouch
-            # for what it writes: `cd /tmp > .env` is a secret write with a `cd` in front of it.
             decision, reason, moved = cd.validate(command, current)
             if moved is not None:
                 state_by_scope[command.scope] = moved
