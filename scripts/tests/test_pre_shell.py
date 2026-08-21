@@ -812,6 +812,33 @@ def test_cd_relative_target_allowed(tmp_path):
     (tmp_path / "sub").mkdir()
     assert run(command="cd sub", cwd=str(tmp_path)) == "allow"
 
+def test_cd_target_is_canonicalized_the_way_bash_does(tmp_path):
+    # `link/..` is the directory holding `link`, not the parent of what it points to:
+    # bash drops the component textually (`-L`) instead of following the symlink first.
+    (tmp_path / "real" / "inner").mkdir(parents=True)
+    (tmp_path / "link").symlink_to(tmp_path / "real" / "inner")
+    (tmp_path / "server.pem").touch()
+    assert run(command="cd link/..", cwd=str(tmp_path)) == "allow"
+    assert run(command="cd link/..; cat *.pem", cwd=str(tmp_path)) == "deny"
+
+def test_cd_dash_p_takes_the_physical_target(tmp_path):
+    # `-P` asks bash for the kernel's own resolution, so there `link/..` really is `real`.
+    (tmp_path / "real" / "inner").mkdir(parents=True)
+    (tmp_path / "link").symlink_to(tmp_path / "real" / "inner")
+    (tmp_path / "real" / "server.pem").touch()
+    assert run(command="cd link/..; cat *.pem", cwd=str(tmp_path)) == "allow"
+    assert run(command="cd -P link/..; cat *.pem", cwd=str(tmp_path)) == "deny"
+    assert run(command="cd -P -L link/..; cat *.pem", cwd=str(tmp_path)) == "allow"  # the last flag wins
+
+def test_cd_falls_back_to_the_physical_target_when_the_logical_one_is_missing(tmp_path):
+    # Confirmed on bash: `cd /var/run/../etc` lands in `/etc`, because `/var/etc` does not exist.
+    (tmp_path / "real" / "inner").mkdir(parents=True)
+    (tmp_path / "real" / "sibling").mkdir()
+    (tmp_path / "real" / "sibling" / "server.pem").touch()
+    (tmp_path / "link").symlink_to(tmp_path / "real" / "inner")
+    assert run(command="cd link/../sibling", cwd=str(tmp_path)) == "allow"            # not "no such directory"
+    assert run(command="cd link/../sibling; cat *.pem", cwd=str(tmp_path)) == "deny"  # anchored in `real/sibling`
+
 def test_cd_outside_the_project_allowed():
     # Decided: the `cd` itself discloses nothing, and every later access is still
     # path-checked against the unchanged project root.
@@ -863,8 +890,6 @@ def test_cd_into_ssh_dir_does_not_defeat_the_secret_rule(tmp_path):
 
 @pytest.mark.parametrize("cmd", [
     "(cd .git); echo x > config",        # subshell
-    "echo $(cd .git); echo x > config",  # command substitution
-    "echo `cd .git`; echo x > config",   # backtick substitution
     "cd .git | cat; echo x > config",    # pipeline stage
     "cd .git & echo x > config",         # async segment
 ])
@@ -904,8 +929,12 @@ def test_function_body_cd_does_not_move_the_tracked_directory(tmp_path):
     (tmp_path / ".git").mkdir()
     assert run(command="cd .git; f() { cd /tmp; }; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
 
-def test_conditional_cd_denial_names_the_way_out():
-    assert "plain sequence" in reason(command="test -d /tmp && cd /tmp")
+def test_cd_denial_names_the_constraint_that_applies():
+    # No more "run it as a plain sequence": after the first-command rule, `test -d x; cd x`
+    # is denied too, so the message must not send the agent down a dead end.
+    assert "conditional" in reason(command="test -d /tmp && cd /tmp")
+    assert "conditional" in reason(command="for f in *; do cd /tmp; done")
+    assert "first command" in reason(command="ls; cd /tmp")
 
 def test_conditional_tag_does_not_gate_the_other_commands():
     # `conditional` is grammar: only the `cd` rule reads it. Everything else is
@@ -914,24 +943,54 @@ def test_conditional_tag_does_not_gate_the_other_commands():
     assert run(command="if ls; then ls; fi") == "allow"
 
 # ============================================================================
+# cd -- only as the first command (rule 2.3)
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "ls; cd /tmp",                    # a plain sequence still runs something first
+    "ls && cd /tmp",                  # ... conditional on top of that
+    "cd /tmp; cd /var",               # the second move is not the first command
+    "CDPATH=/ ; cd /tmp",             # an assignment is a command too, and it retargets `cd`
+    "echo $(cd /tmp)",                # a substitution can never hold the first command
+    "echo `cd /tmp`",
+    "{ ls; cd /tmp; }",
+])
+def test_cd_after_another_command_denied(cmd):
+    assert run(command=cmd) == "deny"
+
+def test_cd_first_is_allowed_whatever_follows():
+    assert run(command="cd /tmp; ls; ls") == "allow"
+
+def test_cd_cannot_be_talked_into_moving_by_an_earlier_command(tmp_path):
+    # The gotcha this rule closes: at hook time `sub` exists, so the move looks fine, but
+    # the `rm` deletes it first and the shell never leaves `tmp_path` -- every later
+    # relative path would then be checked against a directory the shell is not in.
+    (tmp_path / "sub").mkdir()
+    assert run(command="rm -rf sub; cd sub; cat ../x", cwd=str(tmp_path)) == "deny"
+
+def test_cd_prefix_assignment_denied():
+    # Confirmed on bash: with CDPATH set, `cd tmp` from /var lands in /tmp, not /var/tmp.
+    assert run(command="CDPATH=/ cd /tmp") == "deny"
+    assert "CDPATH" in reason(command="CDPATH=/ cd /tmp")
+
+# ============================================================================
 # cd - (the previous directory)
 # ============================================================================
 
-def test_cd_dash_goes_back_to_the_previous_directory(tmp_path):
+def test_cd_dash_denied(tmp_path):
+    # $OLDPWD is a shell variable like any other: an earlier command can overwrite it
+    # (confirmed on bash), so the hook cannot know where `cd -` lands.
     (tmp_path / ".git").mkdir()
-    assert run(command="cd .git; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
-    assert run(command="cd .git; cd -; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "allow"
-
-def test_cd_dash_without_a_tracked_previous_denied():
-    # The payload carries no OLDPWD, so the target is simply unknown.
     assert run(command="cd -") == "deny"
+    assert run(command="cd .git; cd -; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
 
-def test_cd_dash_does_not_see_a_subshells_previous_directory():
-    assert run(command="(cd /tmp); cd -") == "deny"
+def test_cd_dash_denial_does_not_read_as_an_unsupported_option():
+    assert "$OLDPWD" in reason(command="cd -")
 
 def test_cd_dash_dash_dash_is_an_operand_not_the_previous_directory():
     # `cd -- -` means "the directory named -", which does not exist here.
     assert run(command="cd -- -") == "deny"
+    assert "not an existing directory" in reason(command="cd -- -")
 
 # ============================================================================
 # Commands that would desync the tracking (rule 2.3)

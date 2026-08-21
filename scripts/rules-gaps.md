@@ -33,6 +33,9 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 ## 2.3 Tracking current directory
 
 7. [x] Rule: `cd` is allowed when the path is resolvable, denied only when it is not. Current: every `cd` is denied, resolvable or not.
+35. [x] Rule: the tracked directory is the one the shell really lands in. Current: the `cd` target went through `standardize()`, i.e. `cd -P` semantics, while bash defaults to `-L` — so `cd /var/run/../tmp` left the shell in `/var/tmp` (bash drops `run/..` textually) while the hook tracked `/tmp` (`.resolve()` follows the symlink first), anchoring every later path on the wrong directory.
+    Only the `cd` target was affected: a `..` in a later argument is handed to the command unchanged and resolved by the kernel, which follows symlinks first, exactly like `standardize()`. Confirmed by inode — from `/var/run`, `../tmp` is `/tmp`, not `/var/tmp`.
+36. [ ] Rule: the hook must know with certainty where the shell is. Current: the `cd` target is only checked with `is_dir()`, so a directory that exists but cannot be entered (no `+x`, ex: `/root`) is tracked as the new current directory while the shell stays where it is.
 
 
 ## 2.7 Alternative binaries

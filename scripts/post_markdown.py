@@ -10,7 +10,7 @@ def main(input_data:dict):
         return
 
     file_path = input_data.get("tool_input", {}).get("file_path")
-    if not file_path or not file_path.lower().endswith(".md", ".markdown"):
+    if not file_path or not file_path.lower().endswith((".md", ".markdown")):
         return
 
     path = Path(file_path)

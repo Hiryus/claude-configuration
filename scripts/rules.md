@@ -81,22 +81,33 @@ A command line that does not carry a meaningful `description` explaining the int
 
 ### 2.3. Tracking current directory
 
+A `cd` is **allowed** only as the **first** command of the command line (possibly the only one), and is **denied** anywhere else.
+Anything running before it can invalidate what the hook checked: `rm -rf x ; cd x ; cat ../y` deletes the target, so the shell stays where it is, and `CDPATH=/other ; cd x` sends it somewhere else entirely — either way the hook would resolve every later relative path against a directory the shell never reached.
+Three consequences: only one `cd` per command line, a bare assignment counts as a command that precedes it, and a `cd` inside a substitution (`echo $(cd x)`) is always **denied** since something necessarily precedes it.
+
+For the same reason, a `cd` carrying a prefix assignment (`CDPATH=/other cd x`) is **denied**.
+
 The `cd` command is **allowed** if the path is resolvable by the hook (ex: absolute or relative path, including simple and safe expansions like `~/`) and exists.
 It is **denied** if the path is NOT resolvable by the hook (ex: substitution or expansion like `$(...)`, `` `...` ``, `$VAR`, arithmetic, ...) or if the path does not exist (that's an error).
+
+The target is canonicalized the way bash does it, so that the tracked directory is the one the shell really lands in: by default (`-L`) a `..` drops the previous component *as written* — `link/..` is the directory holding `link`, not the parent of what it points to — and `-P` follows the symlink first.
+Every other path stays resolved physically: the shell hands it to the command unchanged, and the kernel always follows symlinks first.
 
 Moving outside the project is **allowed**: the move itself discloses nothing, and every later access is still checked against the unchanged project directory.
 
 A `cd` in a **conditional** context is **denied**, because whether it runs cannot be known statically:
 - Inside an `if`, `for`, `while` or `until` body,
 - Inside a function body, which runs when the function is called, not where it is written,
-- On the right of a `&&` or a `||` (`test -d x && cd x`).
+- On the right of a `&&` or a `||` (`test -d x && cd x`), which is never the first command either.
 
 A `cd` on the *left* of a `&&` is fine (ex: `cd x && cmd`): its target has already been verified to exist, so it succeeds.
 
 A `cd` in an isolated context only moves the current directory *inside that context*, and the move is discarded when it ends, for example:
 - A subshell `( ... )` (but not a group `{ ...; }`, which runs in the current shell),
-- A command substitution `$(...)` or `` `...` ``, and a process substitution `<(...)`,
+- A pipeline stage (ex: `cd x | cmd`),
 - An asynchronous segment (`... &`).
+
+The `cd -` form is **denied**: it goes back to `$OLDPWD`, an ordinary shell variable that any command can overwrite (ex: `OLDPWD=/elsewhere ; cd -`), so its target is never certain.
 
 The `pushd` and `popd` commands are **denied**: they move the current directory through a stack the hook does not follow.
 

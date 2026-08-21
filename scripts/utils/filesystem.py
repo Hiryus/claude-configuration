@@ -88,9 +88,25 @@ def is_tmp_file(path: Path) -> bool:
         return True
     return path.is_relative_to(PurePosixPath("/tmp")) or path.is_relative_to(PurePosixPath("/var/tmp")) or path.is_relative_to(PurePosixPath("/dev/null"))
 
+def normalize(input_path: str, cwd: Path) -> Path:
+    """
+    Turn a written path into the one *bash* computes for `cd` in its default logical mode (`-L`): a `..` drops the previous component textually instead of following the symlink it may sit behind, so `link/..` is the directory holding `link`, not the parent of what it points to.
+    `standardize()` stays the right one for every path handed to a command: those are resolved by the kernel, which always follows symlinks first.
+    """
+    # Resolve variables (order matters)
+    input_path = os.path.expandvars(input_path)
+    input_path = os.path.expanduser(input_path)
+    # A POSIX path on Windows is already canonicalized textually by `standardize`.
+    if sys.platform == "win32" and input_path.startswith("/"):
+        return standardize(input_path, cwd)
+    if not os.path.isabs(input_path):
+        input_path = str(cwd / input_path)
+    return Path(os.path.normpath(input_path))
+
 def standardize(input_path: str, cwd: Path) -> Path:
     """
     Turn a written path into the real one it designates, anchoring a relative path on the current directory (which moves with `cd`).
+    Symlinks are followed, like the kernel does for a path handed to a command.
     """
     # Resolve variables (order matters)
     input_path = os.path.expandvars(input_path)
