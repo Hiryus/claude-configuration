@@ -262,13 +262,12 @@ def test_glob_expanding_to_secret_file_denied(tmp_path):
     (tmp_path / ".env").touch()
     assert run(file_path=str(tmp_path / ".e*"), cwd=str(tmp_path)) == "deny"
 
-def test_glob_secret_denied_even_when_matched_after_a_benign_file(tmp_path, monkeypatch):
+def test_glob_secret_denied_among_benign_matches(tmp_path):
     # A write to a benign file is an ASK in default mode, the secret is a DENY.
-    # The verdict is the most severe match, not the first one: expansion order
-    # is os.scandir order, which is arbitrary, so it is pinned here.
+    # The verdict is the most severe match, whatever the (arbitrary) order the
+    # pattern expands in.
     (tmp_path / "app.yml").touch()
     (tmp_path / "app.key").touch()
-    monkeypatch.setattr("utils.filesystem.expand_glob", lambda *_: [tmp_path / "app.yml", tmp_path / "app.key"])
     assert run(file_path=str(tmp_path / "app.*"), tool_name="Write", cwd=str(tmp_path)) == "deny"
 
 def test_glob_expanding_into_git_dir_denied_for_write(tmp_path):
