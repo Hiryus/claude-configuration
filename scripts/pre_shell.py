@@ -101,6 +101,9 @@ def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
     the hook never simulates a move. That is what rule 2.3 buys by allowing a `cd`
     only when it is alone -- the harness reports where the shell landed on the next call.
     """
+    if not context.intent.strip() or context.intent.strip().lower() == "run shell command":
+        return (Decision.DENY, "Provide a meaningful, specific `description` for this command, explaining why it is required and what it does.")
+
     results = []
     commands = bash.parse(prompt)
     for command in commands:
@@ -109,7 +112,7 @@ def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
             results.append(check_access(command, referenced_paths(command), context))
         elif command.base in ["cd", "popd", "pushd"] and len(commands) > 1:
             # A command that moves the shell is allowed only when it is the whole command line.
-            results.append((Decision.DENY, f"Avoid changing directory. If you really need to, run the `{command.base}` alone, then the rest in the next call."))
+            results.append((Decision.DENY, f"Avoid changing directory. If you really need to, run the `{command.base}` alone, then make another tool call."))
         else:
             references = referenced_paths(command)
             results.append(worst(
@@ -133,8 +136,6 @@ def main(input_data:dict, environ:Mapping[str, str] = os.environ) -> str:
         prompt:str = input_data.get("tool_input", {}).get("command")
         if context.tool_name != "Bash":
             return format_response(Decision.DENY.value, f"Tool `{context.tool_name}` is not allowed. Use the `Bash` tool instead.")
-        elif not context.intent.strip() or context.intent.strip().lower() == "run shell command":
-            return format_response(Decision.DENY.value, "Provide a meaningful, specific `description` for this command, explaining why it is required and what it does.")
         else:
             decision, reason = analyze(prompt, context)
             decision, reason = check_mode_rules(decision, reason, context.mode)
