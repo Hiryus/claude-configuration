@@ -37,7 +37,7 @@ class Context:
     """
     The ambient facts of one hook call.
     """
-    current_cwd:Path = Path()      # current directory, moves with `cd`
+    current_cwd:Path = Path()
     hook_event_name:str = ""
     intent:str = ""
     mode:Mode = Mode.MANUAL

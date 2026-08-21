@@ -3,10 +3,8 @@ import os
 import re
 import sys
 from collections.abc import Mapping
-from dataclasses import replace
-from pathlib import Path
 
-from analyzers import cd, docker, find, git, grep, sed
+from analyzers import docker, find, git, grep, sed
 from generic import check_access, check_mode_rules, format_response, worst
 from models.analyzer import Context, Decision
 from models.grammar import CommandSyntax
@@ -41,7 +39,6 @@ def referenced_paths(command: CommandLine) -> list[Reference]:
 def check_command(command: CommandLine, references: list[Reference], context: Context) -> tuple[Decision, str]:
     """
     Command-specific checks: explicit denials and the allow-list classification.
-    NB: `cd` is not handled here: it is intercepted by analyze(), which needs the move it produces.
     """
     if command.base in ["bash", "cmd", "dash", "exec", "eval", "ksh", "powershell", "pwsh", "sh", "zsh"]:
         return (Decision.DENY, "Do not invoke another shell or eval a command. Run the command directly via Bash.")
@@ -51,6 +48,9 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
         invocation = arguments.parse(command_line=command, syntax=CommandSyntax(aliases=[command.base]))
         references = [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
         return check_access(command, references, context)
+
+    if command.base in ["cd", "popd", "pushd"]:
+        return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
     if command.base in ["echo", "printf", "pwd", "sleep", "tr"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
@@ -76,9 +76,6 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
     if re.match(r"^pip[\d.]*$", command.base): # PIP
         return (Decision.DENY, "Do not use `pip`. Use `uv add`, `uv sync`, or `uvx` instead.")
 
-    if command.base in ["popd", "pushd"]:
-        return (Decision.DENY, f"Do not use `{command.base}`: the hook cannot follow a directory stack. Use `cd` instead.")
-
     if command.base in ["source", "."]:
         return (Decision.DENY, f"Do not use `{command.base}`: sourcing a file is not authorized on the host.")
 
@@ -94,44 +91,31 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
         return (Decision.ASK, f"`{command.base}` is not in the allow-list ({accesses}).")
     return (Decision.ASK, f"`{command.base}` is not in the allow-list.")
 
-def inherited(cwd_by_scope: dict[tuple[int,...], Path], scope: tuple[int,...]) -> Path:
-    """
-    Return the current directory for a given scope, walking outwards to find the nearest enclosing scope with a known one.
-    """
-    for depth in range(len(scope), -1, -1):
-        if cwd := cwd_by_scope.get(scope[:depth]):
-            return cwd
-    raise ContextError("the root directory is missing")  # unreachable: analyze() seeds ()
-
 def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
     """
     Analyze every command in the prompt, then emit one aggregated decision.
-    Each command verdict is the most severe of its generic (file-access) and 
+    Each command verdict is the most severe of its generic (file-access) and
     command-specific checks; the whole prompt is the most severe of those.
 
-    The walk is a fold over the position-sorted commands, keyed by scope: a `cd`
-    updates the directory before the next command of that scope is checked, so every
-    relative path is resolved against the directory the shell is really in.
-
-    Only the first command may be a `cd` (rule 2.3), so at most one move ever lands --
-    but it still lands in *its* scope, so a `cd` inside a subshell does not leak out.
+    The current directory is fixed for the whole call: it comes from the payload and
+    the hook never simulates a move. That is what rule 2.3 buys by allowing a `cd`
+    only when it is alone -- the harness reports where the shell landed on the next call.
     """
     results = []
     commands = bash.parse(prompt)
-    cwd_by_scope:dict[tuple[int,...], Path] = {(): context.current_cwd}
-    for index, command in enumerate(commands):
-        current = replace(context, current_cwd=inherited(cwd_by_scope, command.scope))
-        references = referenced_paths(command)
-        if not command.base: # assignment only, ex: FOO=bar
-            results.append((Decision.ALLOW, "Assignment is allowed."))
-        elif command.base == "cd":
-            decision, reason, moved = cd.validate(command, current, first=index == 0)
-            if moved is not None:
-                cwd_by_scope[command.scope] = moved
-            results.append(worst((decision, reason), check_access(command, references, current)))
+    for command in commands:
+        if not command.base:
+            # Assignment only, ex: FOO=bar. Harmless in itself, but it can still carry a redirect (`FOO=bar > .env`).
+            results.append(check_access(command, referenced_paths(command), context))
+        elif command.base in ["cd", "popd", "pushd"] and len(commands) > 1:
+            # A command that moves the shell is allowed only when it is the whole command line.
+            results.append((Decision.DENY, f"Avoid changing directory. If you really need to, run the `{command.base}` alone, then the rest in the next call."))
         else:
-            verdicts = [check_access(command, references, current), check_command(command, references, current)]
-            results.append(worst(*verdicts))
+            references = referenced_paths(command)
+            results.append(worst(
+                check_access(command, references, context),
+                check_command(command, references, context),
+            ))
 
     if denies := [reason for (decision, reason) in results if decision is Decision.DENY]:
         return (Decision.DENY, "\n".join(dict.fromkeys(denies)))

@@ -61,7 +61,6 @@ def is_claude_dir(path: Path) -> bool:
 def is_git_dir(path: Path) -> bool:
     """
     True for the `.git` directory itself and anything under it, at any depth.
-    Matched on the standardized parts rather than the written text: `cd .git; echo x > config` writes a git file too.
     """
     return any(part.lower() == ".git" for part in path.parts)
 
@@ -87,21 +86,6 @@ def is_tmp_file(path: Path) -> bool:
     if sys.platform == "win32" and path.is_relative_to(Path("C:\\Windows\\Temp")):
         return True
     return path.is_relative_to(PurePosixPath("/tmp")) or path.is_relative_to(PurePosixPath("/var/tmp")) or path.is_relative_to(PurePosixPath("/dev/null"))
-
-def normalize(input_path: str, cwd: Path) -> Path:
-    """
-    Turn a written path into the one *bash* computes for `cd` in its default logical mode (`-L`): a `..` drops the previous component textually instead of following the symlink it may sit behind, so `link/..` is the directory holding `link`, not the parent of what it points to.
-    `standardize()` stays the right one for every path handed to a command: those are resolved by the kernel, which always follows symlinks first.
-    """
-    # Resolve variables (order matters)
-    input_path = os.path.expandvars(input_path)
-    input_path = os.path.expanduser(input_path)
-    # A POSIX path on Windows is already canonicalized textually by `standardize`.
-    if sys.platform == "win32" and input_path.startswith("/"):
-        return standardize(input_path, cwd)
-    if not os.path.isabs(input_path):
-        input_path = str(cwd / input_path)
-    return Path(os.path.normpath(input_path))
 
 def standardize(input_path: str, cwd: Path) -> Path:
     """

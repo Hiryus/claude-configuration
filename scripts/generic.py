@@ -74,8 +74,6 @@ def check_file_rules(references: list[Reference], context: Context) -> tuple[Dec
         return (Decision.ASK, f"{format_references(glob_files)} looks like a glob pattern; cannot statically verify which files it matches.")
     if external_files := [ref.text for ref, path in resolved if not is_file_access_allowed(path, context.project_root, read=ref.access is Access.READ)]:
         return (Decision.ASK, f"Accessing {format_references(external_files)} outside the project requires your validation.")
-    if external_files := [ref.text for ref, path in resolved if not is_file_access_allowed(path, context.project_root, read=ref.access is Access.READ)]:
-        return (Decision.ASK, f"Accessing {format_references(external_files)} outside the project requires your validation.")
     if context.mode is Mode.MANUAL and (written_files := [ref.text for ref, _ in resolved if ref.access is Access.WRITE]):
         return (Decision.ASK, f"Writing {format_references(written_files)} in {context.mode.value} mode requires your validation.")
     return (Decision.ALLOW, "")
