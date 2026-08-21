@@ -79,16 +79,13 @@ class Reference:
 @dataclass
 class CommandLine:
     """
-    One parsed command: its program, argument words, prefix assignments and redirects,
-    plus where it sits in the shell's execution shape (grammar only, no policy).
+    One parsed command: its program, argument words, prefix assignments and redirects.
     """
     program:Token
     args:list[Token] = field(default_factory=list)
     assignments:list[Assignment] = field(default_factory=list)
-    conditional:bool = False    # may or may not run: `if`/`for`/`while` body, or right of `&&`/`||`
     redirects:list[Redirect] = field(default_factory=list)
     environment:dict[str, Token] = field(default_factory=dict)
-    scope:tuple[int,...] = ()   # enclosing isolation scopes (subshell, substitution, pipeline stage, `&`); () is the caller's own shell
 
     @property
     def base(self) -> str:

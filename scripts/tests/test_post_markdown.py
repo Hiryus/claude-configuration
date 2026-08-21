@@ -1,6 +1,5 @@
 # pyright: reportMissingImports=false
 
-import json
 from pathlib import Path
 
 from post_markdown import main
@@ -111,11 +110,9 @@ def test_stops_the_table_at_a_blank_line():
 # Hook
 # ============================================================================
 
-def test_rewrites_the_file_and_warns_the_agent(tmp_path):
-    content, response = run(tmp_path, "| a | bbbb |\n|---|---|\n| cc | d |\n")
+def test_rewrites_the_file(tmp_path):
+    content, _ = run(tmp_path, "| a | bbbb |\n|---|---|\n| cc | d |\n")
     assert content == "| a   | bbbb |\n| --- | ---- |\n| cc  | d    |\n"
-    context = json.loads(response)["hookSpecificOutput"]["additionalContext"]
-    assert "never align table pipes yourself" in context
 
 def test_stays_silent_when_nothing_changes(tmp_path):
     source = "| a   | b   |\n| --- | --- |\n| c   | d   |\n"

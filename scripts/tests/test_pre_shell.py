@@ -1,4 +1,6 @@
+# pytest is a test-only dependency and is not resolved by the linters.
 # pyright: reportMissingImports=false
+# ty: ignore[unresolved-import]
 
 import json
 import sys
@@ -19,8 +21,15 @@ SAME_AS_CWD = object()
 # Helpers
 # ============================================================================
 
-def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+def environment(cwd:object, project_root:object) -> dict[str, str]:
+    """
+    The environment the hook reads `CLAUDE_PROJECT_DIR` from.
+    Anything that is not a string (the `None` of the "unset" cases) leaves it out.
+    """
     root = cwd if project_root is SAME_AS_CWD else project_root
+    return {"CLAUDE_PROJECT_DIR": root} if isinstance(root, str) else {}
+
+def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
@@ -30,7 +39,7 @@ def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful de
             "command": command,
             "description": description,
         },
-    }, environ={"CLAUDE_PROJECT_DIR": root} if root is not None else {})
+    }, environ=environment(cwd, project_root))
     return json.loads(result).get("hookSpecificOutput", {})
 
 def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
@@ -115,6 +124,18 @@ def test_readonly_double_dash_path_checks_the_operand():
 def test_assignment_only_allowed():
     assert run(command="FOO=bar") == "allow"
 
+@pytest.mark.parametrize(("cmd", "mode", "decision"), [
+    ("FOO=bar > .env", "default", "deny"),                    # 1.1: truncates a secret
+    ("FOO=bar > /proj/.git/config", "acceptEdits", "deny"),   # 1.2: truncates a git file
+    ("FOO=bar > /elsewhere/x.txt", "default", "ask"),         # 1.4: outside the project
+    ("FOO=bar > notes.txt", "default", "ask"),                # 1.4: a write in manual mode
+    ("FOO=bar > notes.txt", "acceptEdits", "allow"),
+])
+def test_assignment_redirect_is_still_checked(cmd, mode, decision):
+    # An assignment is harmless on its own, but `>` truncates its target all the same,
+    # so rule 2.5 applies to it like to any other command.
+    assert run(command=cmd, mode=mode) == decision
+
 # ============================================================================
 # Explicit denials
 # ============================================================================
@@ -126,7 +147,7 @@ def test_assignment_only_allowed():
     "cmd /c dir",
     "git -C /x status",
     "git -c foo=bar status",
-    "cd /somewhere",  # rule 2.3: the target does not exist
+    "cd /somewhere && ls",  # rule 2.3: a `cd` may not share the call
 ])
 def test_denied_commands(cmd):
     assert run(command=cmd) == "deny"
@@ -790,222 +811,140 @@ def test_project_boundary_is_the_project_root_not_the_cwd():
     assert run(command="cat ../notes.txt", cwd="/proj/work", project_root="/proj/work") == "ask"
 
 # ============================================================================
-# cd -- resolution (rule 2.3)
+# cd -- allowed only on its own (rule 2.3)
 # ============================================================================
 
-@pytest.mark.parametrize("cmd", ["cd /tmp", "cd /tmp/", "cd -P /tmp", "cd -L /tmp", "cd -- /tmp", "cd", "cd ~"])
-def test_cd_resolvable_target_allowed(cmd):
-    assert run(command=cmd) == "allow"
-
 @pytest.mark.parametrize("cmd", [
-    "cd $HOME",          # parameter expansion
-    "cd $(pwd)",         # command substitution
-    "cd `pwd`",          # backtick substitution
-    "cd /nonexistent",   # not a directory
-    "cd -e /tmp",        # untabled option
-    "cd /tmp /var",      # more than one operand
+    "cd /tmp",
+    "cd /tmp/",
+    "cd -P /tmp",
+    "cd -- /tmp",
+    "cd",                # $HOME
+    "cd ~",
+    "cd -",              # the shell knows where it lands, and reports it back
+    "cd $HOME",          # parameter expansion: the hook does not need to resolve it
+    "cd /nonexistent",   # bash fails and stays put -- the next payload says so
 ])
-def test_cd_unresolvable_target_denied(cmd):
-    assert run(command=cmd) == "deny"
+def test_lone_cd_allowed(cmd):
+    assert run(command=cmd) == "allow"
 
 def test_cd_relative_target_allowed(tmp_path):
     (tmp_path / "sub").mkdir()
     assert run(command="cd sub", cwd=str(tmp_path)) == "allow"
 
-def test_cd_target_is_canonicalized_the_way_bash_does(tmp_path):
-    # `link/..` is the directory holding `link`, not the parent of what it points to:
-    # bash drops the component textually (`-L`) instead of following the symlink first.
-    (tmp_path / "real" / "inner").mkdir(parents=True)
-    (tmp_path / "link").symlink_to(tmp_path / "real" / "inner")
-    (tmp_path / "server.pem").touch()
-    assert run(command="cd link/..", cwd=str(tmp_path)) == "allow"
-    assert run(command="cd link/..; cat *.pem", cwd=str(tmp_path)) == "deny"
-
-def test_cd_dash_p_takes_the_physical_target(tmp_path):
-    # `-P` asks bash for the kernel's own resolution, so there `link/..` really is `real`.
-    (tmp_path / "real" / "inner").mkdir(parents=True)
-    (tmp_path / "link").symlink_to(tmp_path / "real" / "inner")
-    (tmp_path / "real" / "server.pem").touch()
-    assert run(command="cd link/..; cat *.pem", cwd=str(tmp_path)) == "allow"
-    assert run(command="cd -P link/..; cat *.pem", cwd=str(tmp_path)) == "deny"
-    assert run(command="cd -P -L link/..; cat *.pem", cwd=str(tmp_path)) == "allow"  # the last flag wins
-
-def test_cd_falls_back_to_the_physical_target_when_the_logical_one_is_missing(tmp_path):
-    # Confirmed on bash: `cd /var/run/../etc` lands in `/etc`, because `/var/etc` does not exist.
-    (tmp_path / "real" / "inner").mkdir(parents=True)
-    (tmp_path / "real" / "sibling").mkdir()
-    (tmp_path / "real" / "sibling" / "server.pem").touch()
-    (tmp_path / "link").symlink_to(tmp_path / "real" / "inner")
-    assert run(command="cd link/../sibling", cwd=str(tmp_path)) == "allow"            # not "no such directory"
-    assert run(command="cd link/../sibling; cat *.pem", cwd=str(tmp_path)) == "deny"  # anchored in `real/sibling`
-
 def test_cd_outside_the_project_allowed():
-    # Decided: the `cd` itself discloses nothing, and every later access is still
+    # The `cd` itself discloses nothing, and every later access is still
     # path-checked against the unchanged project root.
     assert run(command="cd /tmp") == "allow"
-
-def test_cd_does_not_move_the_project_boundary():
-    assert run(command="cd /tmp; cat /tmp/../etc/passwd") == "ask"
 
 def test_cd_redirect_is_still_checked():
     # The `cd` verdict may not vouch for what the command writes on its way.
     assert run(command="cd /tmp > .env") == "deny"
 
-# ============================================================================
-# cd -- the current directory anchors the later commands
-# ============================================================================
-
-def test_cd_moves_the_anchor_of_the_next_commands(tmp_path):
-    sub = tmp_path / "sub"
-    sub.mkdir()
-    (sub / "server.pem").touch()
-    assert run(command="cat *.pem", cwd=str(tmp_path)) == "allow"          # nothing matches at the root
-    assert run(command="cd sub; cat *.pem", cwd=str(tmp_path)) == "deny"   # ... but the secret matches in `sub`
-
-def test_cd_left_of_and_still_anchors_the_right_side(tmp_path):
-    sub = tmp_path / "sub"
-    sub.mkdir()
-    (sub / "server.pem").touch()
-    assert run(command="cd sub && cat *.pem", cwd=str(tmp_path)) == "deny"
-
-def test_cd_out_of_the_project_makes_relative_paths_external():
-    # `/` is a real directory outside the project, and not one of the exempted
-    # locations, so the file the shell would now read needs validation.
-    assert run(command="cat notes.txt") == "allow"
-    assert run(command="cd /; cat notes.txt") == "ask"
-
-def test_cd_into_git_dir_does_not_defeat_the_git_rule(tmp_path):
-    # Step 2 regression guard: `is_git_dir` used to match the written text, so moving
-    # the shell into `.git` first hid the git file behind a plain name.
-    (tmp_path / ".git").mkdir()
-    assert run(command="cd .git; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
-
-def test_cd_into_ssh_dir_does_not_defeat_the_secret_rule(tmp_path):
-    (tmp_path / ".ssh").mkdir()
-    assert run(command="cd .ssh; cat known_hosts", cwd=str(tmp_path)) == "deny"
-
-# ============================================================================
-# cd -- scope isolation
-# ============================================================================
-
 @pytest.mark.parametrize("cmd", [
-    "(cd .git); echo x > config",        # subshell
-    "cd .git | cat; echo x > config",    # pipeline stage
-    "cd .git & echo x > config",         # async segment
+    "cd /tmp; ls",                    # the `ls` would be checked against the old directory
+    "cd /tmp && ls",
+    "ls; cd /tmp",
+    "ls && cd /tmp",
+    "cd /tmp; cd /var",
+    "CDPATH=/ ; cd /tmp",             # an assignment is a command too
+    "echo $(cd /tmp)",                # a substitution holds a command of its own
+    "echo `cd /tmp`",
+    "cd $(pwd)",                      # ... on the target side too
+    "{ ls; cd /tmp; }",
+    "(cd /tmp); ls",
+    "cd /tmp | cat",
+    "cd /tmp & ls",
 ])
-def test_isolated_cd_does_not_leak_out(tmp_path, cmd):
-    (tmp_path / ".git").mkdir()
-    assert run(command=cmd, cwd=str(tmp_path), mode="acceptEdits") == "allow"
-
-def test_isolated_cd_still_applies_inside_its_own_scope(tmp_path):
-    (tmp_path / ".git").mkdir()
-    assert run(command="(cd .git; echo x > config)", cwd=str(tmp_path), mode="acceptEdits") == "deny"
-
-def test_group_is_not_a_subshell(tmp_path):
-    # `{ ...; }` runs in the current shell, so its `cd` does leak out -- unlike `( ... )`.
-    (tmp_path / ".git").mkdir()
-    assert run(command="{ cd .git; }; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
-
-# ============================================================================
-# cd -- conditional contexts are refused
-# ============================================================================
-
-@pytest.mark.parametrize("cmd", [
-    "test -d /tmp && cd /tmp",           # runs only if the left side succeeded
-    "ls || cd /tmp",                     # runs only if the left side failed
-    "if test -d /tmp; then cd /tmp; fi", # did it run?
-    "for f in *; do cd /tmp; done",      # how many times?
-    "while ls; do cd /tmp; done",
-    "until ls; do cd /tmp; done",
-    "f() { cd /tmp; }",                  # runs when the function is called, not here
-    "case x in x) cd /tmp;; esac",       # bashlex cannot parse `case` at all (rule 2.1)
-])
-def test_conditional_cd_denied(cmd):
+def test_cd_alongside_another_command_denied(cmd):
     assert run(command=cmd) == "deny"
 
-def test_function_body_cd_does_not_move_the_tracked_directory(tmp_path):
-    # The body does not run where it is written: folding its `cd` in would let
-    # `f() { cd /tmp; }` talk the hook out of the directory the shell is really in.
-    (tmp_path / ".git").mkdir()
-    assert run(command="cd .git; f() { cd /tmp; }; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
+def test_cd_does_not_move_the_project_boundary():
+    # A relative path, so the assertion really depends on the perimeter: wherever a
+    # previous `cd` left the shell, the project is still `CLAUDE_PROJECT_DIR`.
+    # `/` is a real directory outside the project and not one of the exempted locations.
+    assert run(command="cat notes.txt", cwd="/", project_root="/proj") == "ask"
+    assert run(command="cat notes.txt", cwd="/proj", project_root="/proj") == "allow"
 
-def test_cd_denial_names_the_constraint_that_applies():
-    # No more "run it as a plain sequence": after the first-command rule, `test -d x; cd x`
-    # is denied too, so the message must not send the agent down a dead end.
-    assert "conditional" in reason(command="test -d /tmp && cd /tmp")
-    assert "conditional" in reason(command="for f in *; do cd /tmp; done")
-    assert "first command" in reason(command="ls; cd /tmp")
+# ============================================================================
+# The payload cwd anchors the whole call
+# ============================================================================
 
-def test_conditional_tag_does_not_gate_the_other_commands():
-    # `conditional` is grammar: only the `cd` rule reads it. Everything else is
-    # checked exactly as it would be outside the conditional.
+def test_paths_are_anchored_on_the_reported_cwd(tmp_path):
+    # What a previous lone `cd` did is visible only through the payload `cwd`.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "server.pem").touch()
+    assert run(command="cat *.pem", cwd=str(tmp_path)) == "allow"  # nothing matches at the root
+    assert run(command="cat *.pem", cwd=str(sub)) == "deny"        # ... but the secret matches in `sub`
+
+def test_cwd_inside_git_dir_does_not_defeat_the_git_rule(tmp_path):
+    # The predicates run on standardized paths, so a cwd already inside `.git`
+    # cannot hide a git file behind a plain name.
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    assert run(command="echo x > config", cwd=str(git_dir), mode="acceptEdits") == "deny"
+
+def test_cwd_inside_ssh_dir_does_not_defeat_the_secret_rule(tmp_path):
+    ssh_dir = tmp_path / ".ssh"
+    ssh_dir.mkdir()
+    assert run(command="cat known_hosts", cwd=str(ssh_dir)) == "deny"
+
+# ============================================================================
+# cd -- whether it runs is the shell's business, not the hook's
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "test -d /tmp && cd /tmp",           # the `test` shares the call
+    "ls || cd /tmp",
+    "if test -d /tmp; then cd /tmp; fi",
+    "while ls; do cd /tmp; done",
+    "until ls; do cd /tmp; done",
+    "case x in x) cd /tmp;; esac",       # bashlex cannot parse `case` at all (rule 2.1)
+])
+def test_cd_sharing_the_call_with_a_test_denied(cmd):
+    assert run(command=cmd) == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "for f in *; do cd /tmp; done",  # may run zero, one or many times
+    "f() { cd /tmp; }",              # only runs when the function is called
+])
+def test_cd_that_may_not_run_is_still_allowed_alone(cmd):
+    # The hook does not predict the shell: it holds no `cd` target to be wrong about,
+    # and wherever the shell ends up, the next payload reports it.
+    assert run(command=cmd) == "allow"
+
+def test_commands_inside_a_body_are_checked_like_any_other():
+    # Descending into an `if`/`for` body is what matters; how often it runs is not.
     assert run(command="if ls; then cat .env; fi") == "deny"
     assert run(command="if ls; then ls; fi") == "allow"
 
 # ============================================================================
-# cd -- only as the first command (rule 2.3)
+# pushd / popd -- the same rule as cd (2.3)
 # ============================================================================
 
-@pytest.mark.parametrize("cmd", [
-    "ls; cd /tmp",                    # a plain sequence still runs something first
-    "ls && cd /tmp",                  # ... conditional on top of that
-    "cd /tmp; cd /var",               # the second move is not the first command
-    "CDPATH=/ ; cd /tmp",             # an assignment is a command too, and it retargets `cd`
-    "echo $(cd /tmp)",                # a substitution can never hold the first command
-    "echo `cd /tmp`",
-    "{ ls; cd /tmp; }",
-])
-def test_cd_after_another_command_denied(cmd):
+@pytest.mark.parametrize("cmd", ["pushd /tmp", "popd"])
+def test_lone_directory_stack_move_allowed(cmd):
+    # The stack is the shell's business: the hook does not follow it, it just reads
+    # the directory the harness reports once the call is over.
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", ["pushd /tmp; ls", "ls && popd", "pushd /tmp; popd"])
+def test_directory_stack_move_alongside_another_command_denied(cmd):
     assert run(command=cmd) == "deny"
 
-def test_cd_first_is_allowed_whatever_follows():
-    assert run(command="cd /tmp; ls; ls") == "allow"
-
-def test_cd_cannot_be_talked_into_moving_by_an_earlier_command(tmp_path):
-    # The gotcha this rule closes: at hook time `sub` exists, so the move looks fine, but
-    # the `rm` deletes it first and the shell never leaves `tmp_path` -- every later
-    # relative path would then be checked against a directory the shell is not in.
-    (tmp_path / "sub").mkdir()
-    assert run(command="rm -rf sub; cd sub; cat ../x", cwd=str(tmp_path)) == "deny"
-
-def test_cd_prefix_assignment_denied():
-    # Confirmed on bash: with CDPATH set, `cd tmp` from /var lands in /tmp, not /var/tmp.
-    assert run(command="CDPATH=/ cd /tmp") == "deny"
-    assert "CDPATH" in reason(command="CDPATH=/ cd /tmp")
-
 # ============================================================================
-# cd - (the previous directory)
-# ============================================================================
-
-def test_cd_dash_denied(tmp_path):
-    # $OLDPWD is a shell variable like any other: an earlier command can overwrite it
-    # (confirmed on bash), so the hook cannot know where `cd -` lands.
-    (tmp_path / ".git").mkdir()
-    assert run(command="cd -") == "deny"
-    assert run(command="cd .git; cd -; echo x > config", cwd=str(tmp_path), mode="acceptEdits") == "deny"
-
-def test_cd_dash_denial_does_not_read_as_an_unsupported_option():
-    assert "$OLDPWD" in reason(command="cd -")
-
-def test_cd_dash_dash_dash_is_an_operand_not_the_previous_directory():
-    # `cd -- -` means "the directory named -", which does not exist here.
-    assert run(command="cd -- -") == "deny"
-    assert "not an existing directory" in reason(command="cd -- -")
-
-# ============================================================================
-# Commands that would desync the tracking (rule 2.3)
+# Shell nesting (2.6)
 # ============================================================================
 
 @pytest.mark.parametrize("cmd", [
-    "pushd /tmp",
-    "popd",
     "exec ls",
     "eval ls",
     "source env.sh",
     ". env.sh",
     "source /tmp/env.sh",
 ])
-def test_directory_desyncing_commands_denied(cmd):
+def test_shell_nesting_commands_denied(cmd):
     assert run(command=cmd) == "deny"
 
 # ============================================================================

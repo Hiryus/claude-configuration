@@ -30,7 +30,7 @@ So: `project_root` <- `CLAUDE_PROJECT_DIR`, `cwd` <- payload `cwd`.
 
 **No fallback chain** (amended): both are *required*. A missing/empty `CLAUDE_PROJECT_DIR`, or a missing/empty payload `cwd`, is an error -> **refuse the call** (deny). Guessing one from the other reintroduces exactly the conflation this plan removes, and silently degrades to an unbounded project boundary.
 
-## Step 1 - split cwd from project_root
+## Step 1 - [x] split cwd from project_root
 
 `models/analyzer.py`:
 
@@ -78,7 +78,7 @@ Do not "simplify" `generic.py:67` - `is_claude_dir(...) and not in_project(...)`
 `generic.py`: `check_file_rules(references, project_root, mode)` -> `check_file_rules(references, context)`.
 Callers: `generic.py:51`, `pre_file_access.py:12`.
 
-## Step 2 - standardize once, then apply the predicates (security fix)
+## Step 2 - [x] standardize once, then apply the predicates (security fix)
 
 **This must land with step 1, not after.** `is_git_dir()` regex-matches the *raw* text and `is_secret()` builds `Path(raw)`. Today harmless because `cd` is denied. Once cwd tracking lands:
 
@@ -92,7 +92,9 @@ Fix: the pipeline in `check_file_rules()` becomes **expand (with `cwd`) -> stand
 
 Caveat: `standardize()` returns `Path|PurePosixPath` (a POSIX path on Windows, `filesystem.py:108-112`), so every predicate must accept the union. `is_claude_dir` already guards with `isinstance(path, Path)`; `is_secret`'s win32 `rstrip(".")` works on raw text today and needs a decision when it moves to a resolved path.
 
-## Step 3 - scope tags in the bash parser
+## Step 3 - [~] scope tags in the bash parser
+
+Dropped entirely, scope tags and conditional tag alike. A `cd` is now allowed only when it is the only command of the call (`rules.md` §2.3), so there is nothing to isolate per scope, and nothing depends on whether a command runs: the hook predicts nothing about the shell, it reads the resulting directory from the harness on the next call.
 
 **Ordering is not the problem.** `collect()` sorts by `pos[0]`, and positions are monotonic with the enclosing sequence, so `cd /tmp && cat $(ls)` already yields `cd` first. The one inversion is *within* a command (`cat $(git log)` -> `cat` before `git log`), and it is harmless: both run with the same inherited cwd. No re-ordering needed.
 
@@ -122,7 +124,9 @@ Implementation - no tree rewrite, the list stays flat and position-sorted:
 - `analyze()` folds with `cwd_by_scope:dict[tuple, Path]`: a command inherits the cwd of its nearest ancestor scope prefix; a `cd` writes back only to its own scope. Leaving a scope discards it implicitly - the tuple never recurs.
 - `cd` with `conditional=True` -> **DENY**, reason telling the agent to run it as a plain sequence.
 
-## Step 4 - `cd` semantics
+## Step 4 - [~] `cd` semantics
+
+Dropped: the hook resolves no `cd` target at all. `parsers/cd.py` and `analyzers/cd.py` were deleted; only the `pushd`/`popd`/`exec`/`eval` denials remain.
 
 `cd` is **intercepted in `analyze()`** (step 5's fold), before the generic verdicts: it is the only command whose verdict also produces state. The `command.base == "cd"` branch of `check_command()` (`pre_shell.py:53`) is deleted, not rewritten, and `cd.validate()` deliberately does *not* have the `check_command` shape - it returns a 3-tuple and must never be fed to `worst()`.
 
@@ -165,7 +169,9 @@ If it turns out to be a burden during implementation, fall back to denying `cd -
 
 `pushd`/`popd`/`exec`/`eval` -> explicit **DENY** in `check_command()`, where the old `cd` deny sat. None of them is in the allow-list today, so all four currently fall through to ASK; an approved ASK desyncs tracking silently (`pushd`/`popd`) or hands over an unanalyzable command (`exec`/`eval`).
 
-## Step 5 - thread the cwd through the analysis
+## Step 5 - [~] thread the cwd through the analysis
+
+Dropped: the payload cwd is authoritative for the whole call, so there is no fold.
 
 `pre_shell.analyze()` becomes a fold over the position-sorted commands, keyed by scope: `cd` updates the state *before* the next command of that scope is checked.
 
@@ -190,7 +196,7 @@ for command in commands:
 
 Analyzer signatures are unchanged - they already take a `Context`, they just get the right cwd now. `git`/`grep`/`find`/`sed`/`docker` inherit correct relative-path resolution for free.
 
-## Step 6 - tests
+## Step 6 - [x] tests
 
 `tests/test_pre_shell.py` and `tests/test_pre_file_access.py`: `output()` gains a `project_root` kwarg **defaulting to the `cwd` argument**, passed as `main(payload, environ={"CLAUDE_PROJECT_DIR": project_root})` (the param added in step 1); `project_root=None` sends `{}`, i.e. the var unset. Since `CLAUDE_PROJECT_DIR` is now mandatory (step 0) it cannot default to unset, but root == cwd reproduces today's behavior exactly, so **existing tests pass unchanged**.
 
@@ -215,7 +221,7 @@ To revisit - they encode the current conflation:
 - `test_pre_file_access.py:159` (`cwd=str(harness / "scripts")`, asserts deny) - a subdir cwd currently defeats harness-as-project detection; with `CLAUDE_PROJECT_DIR` honored the intent changes.
 - `test_pre_file_access.py:145` and `:151` - same family.
 
-## Step 7 - docs
+## Step 7 - [x] docs
 
 `rules.md` §2.3 - rule changes, all approved:
 - ~~"target does not exist" denies~~ - **done**, already written by the user in §2.3, do not rewrite it.

@@ -1,4 +1,6 @@
+# pytest is a test-only dependency and is not resolved by the linters.
 # pyright: reportMissingImports=false
+# ty: ignore[unresolved-import]
 
 import json
 from pathlib import Path
@@ -19,8 +21,15 @@ SAME_AS_CWD = object()
 # Helpers
 # ============================================================================
 
-def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+def environment(cwd:object, project_root:object) -> dict[str, str]:
+    """
+    The environment the hook reads `CLAUDE_PROJECT_DIR` from.
+    Anything that is not a string (the `None` of the "unset" cases) leaves it out.
+    """
     root = cwd if project_root is SAME_AS_CWD else project_root
+    return {"CLAUDE_PROJECT_DIR": root} if isinstance(root, str) else {}
+
+def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
@@ -29,7 +38,7 @@ def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_ro
         "tool_input": {
             "file_path": file_path,
         },
-    }, environ={"CLAUDE_PROJECT_DIR": root} if root is not None else {})
+    }, environ=environment(cwd, project_root))
     return json.loads(result).get("hookSpecificOutput", {})
 
 def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):

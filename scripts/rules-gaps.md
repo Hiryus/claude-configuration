@@ -30,12 +30,11 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
        Current: only the file hook gated writes on the mode; the shell hook never read it, so `echo x > file` was **allowed** in **manual** mode.
 
 
-## 2.3 Tracking current directory
+## 2.3 Current directory
 
-7. [x] Rule: `cd` is allowed when the path is resolvable, denied only when it is not. Current: every `cd` is denied, resolvable or not.
-35. [x] Rule: the tracked directory is the one the shell really lands in. Current: the `cd` target went through `standardize()`, i.e. `cd -P` semantics, while bash defaults to `-L` — so `cd /var/run/../tmp` left the shell in `/var/tmp` (bash drops `run/..` textually) while the hook tracked `/tmp` (`.resolve()` follows the symlink first), anchoring every later path on the wrong directory.
-    Only the `cd` target was affected: a `..` in a later argument is handed to the command unchanged and resolved by the kernel, which follows symlinks first, exactly like `standardize()`. Confirmed by inode — from `/var/run`, `../tmp` is `/tmp`, not `/var/tmp`.
-36. [ ] Rule: the hook must know with certainty where the shell is. Current: the `cd` target is only checked with `is_dir()`, so a directory that exists but cannot be entered (no `+x`, ex: `/root`) is tracked as the new current directory while the shell stays where it is.
+7. [x] Rule: a lone `cd` is allowed. Current: every `cd` is denied.
+35. [x] Rule: the hook must know with certainty where the shell is. Current: the hook simulated the move to track it, and got it wrong in three ways — `-L`/`-P` canonicalization, a target that exists but cannot be entered (no `+x`, ex: `/root`), and a target an earlier command deletes.
+    Closed by dropping the simulation entirely: a `cd` is only allowed alone, so the hook always resolves against the directory the harness reports.
 
 
 ## 2.7 Alternative binaries
