@@ -38,7 +38,6 @@ class Context:
     The ambient facts of one hook call.
     """
     current_cwd:Path = Path()      # current directory, moves with `cd`
-    previous_cwd:Path|None = None  # $OLDPWD, the target of `cd -`
     hook_event_name:str = ""
     intent:str = ""
     mode:Mode = Mode.MANUAL

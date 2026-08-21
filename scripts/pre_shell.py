@@ -94,14 +94,14 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
         return (Decision.ASK, f"`{command.base}` is not in the allow-list ({accesses}).")
     return (Decision.ASK, f"`{command.base}` is not in the allow-list.")
 
-def inherited(state_by_scope: dict[tuple[int,...], tuple[Path, Path|None]], scope: tuple[int,...]) -> tuple[Path, Path|None]:
+def inherited(cwd_by_scope: dict[tuple[int,...], Path], scope: tuple[int,...]) -> Path:
     """
-    Return the directory state for a given scope, walking outwards to find the nearest enclosing scope with a known state.
+    Return the current directory for a given scope, walking outwards to find the nearest enclosing scope with a known one.
     """
     for depth in range(len(scope), -1, -1):
-        if state := state_by_scope.get(scope[:depth]):
-            return state
-    raise ContextError("the root directory state is missing")  # unreachable: analyze() seeds ()
+        if cwd := cwd_by_scope.get(scope[:depth]):
+            return cwd
+    raise ContextError("the root directory is missing")  # unreachable: analyze() seeds ()
 
 def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
     """
@@ -110,22 +110,24 @@ def analyze(prompt: str, context: Context) -> tuple[Decision, str]:
     command-specific checks; the whole prompt is the most severe of those.
 
     The walk is a fold over the position-sorted commands, keyed by scope: a `cd`
-    updates the directory state before the next command of that scope is checked,
-    so every relative path is resolved against the directory the shell is really in.
+    updates the directory before the next command of that scope is checked, so every
+    relative path is resolved against the directory the shell is really in.
+
+    Only the first command may be a `cd` (rule 2.3), so at most one move ever lands --
+    but it still lands in *its* scope, so a `cd` inside a subshell does not leak out.
     """
     results = []
     commands = bash.parse(prompt)
-    state_by_scope:dict[tuple[int,...], tuple[Path, Path|None]] = {(): (context.current_cwd, context.previous_cwd)}
-    for command in commands:
-        cwd, previous_cwd = inherited(state_by_scope, command.scope)
-        current = replace(context, cwd=cwd, previous_cwd=previous_cwd)
+    cwd_by_scope:dict[tuple[int,...], Path] = {(): context.current_cwd}
+    for index, command in enumerate(commands):
+        current = replace(context, current_cwd=inherited(cwd_by_scope, command.scope))
         references = referenced_paths(command)
         if not command.base: # assignment only, ex: FOO=bar
             results.append((Decision.ALLOW, "Assignment is allowed."))
         elif command.base == "cd":
-            decision, reason, moved = cd.validate(command, current)
+            decision, reason, moved = cd.validate(command, current, first=index == 0)
             if moved is not None:
-                state_by_scope[command.scope] = moved
+                cwd_by_scope[command.scope] = moved
             results.append(worst((decision, reason), check_access(command, references, current)))
         else:
             verdicts = [check_access(command, references, current), check_command(command, references, current)]
