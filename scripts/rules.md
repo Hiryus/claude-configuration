@@ -410,6 +410,8 @@ The container side of the copy (`service:/path`) is not checked: it is inside th
 
 **Reason:** The aim here is to allow the agent to run any command in any _isolated_ container, allowing to bind only the project directory to ensure the untrusted command cannot change the host outside of the project files.
 
+NB: everything after the container/service/image name is the container's own argv: it runs inside the sandbox. These options are not checked.
+
 ### 3.4. Building an image
 
 The `docker build` and `docker buildx` commands are **allowed**, as long as they only reference files inside the project, and with the following options (any other option is **ask**):

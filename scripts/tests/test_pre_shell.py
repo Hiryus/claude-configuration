@@ -1047,9 +1047,8 @@ def test_non_root_user_still_asks():
     assert run(command="docker run --user 1000 alpine") == "ask"
 
 def test_escape_option_hidden_behind_an_unknown_option_still_denied():
-    # `--pid` is unknown, so it is not paired with its value: `host` reads as the
-    # image name and ends the option walk. `--privileged` sits behind it and must
-    # still be found -- a deny may never degrade into an ask.
+    # `--pid` is tabled, so `host` is its value, not the image: `--privileged` is
+    # still before the operand. A deny may never degrade into an ask.
     assert run(command="docker run --pid host --privileged alpine") == "deny"
 
 # --- Running a container ----------------------------------------------------
@@ -1076,9 +1075,37 @@ def test_container_argv_path_is_not_checked():
     # Everything after the image runs *inside* the sandbox: it is not a host path.
     assert run(command="docker run --rm alpine cat /etc/shadow") == "allow"
 
-@pytest.mark.xfail(reason="no stop-at-first-operand: the container's own argv is still walked as docker options, so `-la` reads as an untabled flag; to be reintroduced", strict=True)
 def test_container_argv_flags_are_not_checked():
     assert run(command="docker run --rm alpine ls -la /root/.ssh") == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    'docker exec seat-front grep -rl "x" /var/www 2>&1 | head',  # the reported bug: fd-dup + pipe
+    "docker container exec web ls -la",                          # the `container` spelling too
+    "docker compose run --rm web pytest --cov",                  # a compose service argv
+    "docker exec -- web ls -la",                                 # the operand may sit behind a `--`
+    "docker exec web grep -- foo",                               # ... and the argv may carry its own
+])
+def test_container_argv_options_are_not_checked(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_container_argv_does_not_hide_a_docker_option():
+    # A space-separated value may not move the boundary: `always` is `--pull`'s, not the image.
+    assert run(command="docker run --rm --pull always -v /etc:/etc alpine ls") == "ask"
+
+def test_untabled_option_before_the_operand_disables_the_strip():
+    # `-u0` is untabled, so it is not paired with its value: `alpine` may be that value rather than
+    # the image. The boundary is unknown, so the whole line stays under option parsing.
+    assert run(command="docker run -u0 -v ./certs/server.key:/k alpine cmd") == "deny"
+
+def test_flag_shaped_value_before_the_operand_disables_the_strip():
+    # `--name` swallows `-v`, so `./x:/y` reads as the image -- docker reads it the same way, but
+    # such a line is almost always a typo: it is checked whole rather than newly allowed.
+    assert run(command="docker run --rm --name -v ./x:/y --privileged alpine") == "deny"
+
+def test_negative_value_before_the_operand_keeps_the_strip():
+    # `-1` is `--stop-timeout`'s value, not a flag: the boundary is still the image, so the argv
+    # is dropped. Reading it as flag-shaped would put the whole line back under option parsing.
+    assert run(command="docker run --rm --stop-timeout -1 alpine mytool --privileged") == "allow"
 
 @pytest.mark.parametrize("cmd", [
     "docker run --rm -v /etc:/etc alpine",
@@ -1107,12 +1134,11 @@ def test_secret_behind_an_unsupported_option_still_denied(cmd):
     assert run(command=cmd) == "deny"
 
 def test_secret_after_an_unsupported_option_still_denied():
-    # The unknown option comes first here: the re-scan pairs it with its value,
-    # so the options behind it are read instead of being taken for the image.
+    # The unsupported option comes first here: it is tabled, so it is paired with its
+    # value and the options behind it are read instead of being taken for the image.
     assert run(command="docker run --rm --pid host --env-file .env alpine") == "deny"
     assert run(command="docker run --rm --pid host -v ./certs/server.key:/k alpine") == "deny"
 
-@pytest.mark.xfail(reason="no stop-at-first-operand: `--privileged` in the container's own argv is read as a docker option and denied; to be reintroduced", strict=True)
 def test_container_argv_is_not_read_as_host_options():
     # Docker only takes options before the image: what follows runs in the
     # sandbox, so it may not be reported as an escape attempt on the host.
