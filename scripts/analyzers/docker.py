@@ -156,81 +156,17 @@ BUILD_ALLOWED_FLAGS = BUILD_READ_FLAGS + BUILD_WRITE_FLAGS + ["build-arg", "help
 COPY_COMMANDS = ["docker compose cp", "docker container cp", "docker cp"]
 
 
-def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
+# ============================================================================
+# Utility functions
+# ============================================================================
+
+
+def is_flag(text:str|None) -> bool:
     """
-    `docker` is allow-listed per command path (`docker container ls`).
-    - The sandbox-escaping options (`--privileged`, `--device`, ... and running as root) are denied everywhere.
-    - Status and lifecycle commands are allowed as-is: they act on docker objects, not on the host.
-    - The commands that reach the host filesystem (run/exec mounts, build, cp, volume create) are allowed only with tabled options and only for paths check_access validates.
-      The container side of a mount or a copy is never checked: it is inside the sandbox.
-    Everything else, including any untabled option on a restricted command, is an ask.
+    A flag-shaped word, as opposed to a value that merely starts with a dash: the negative numbers
+    docker takes are ordinary values (`--memory-swap -1`, `--oom-score-adj -500`).
     """
-    invocation = docker.parse(command)
-    reasons:list[str] = [] # reasons to ask are collected, not returned on the spot.
-    references = [Reference(access=Access.READ, text=x) for x in invocation.values("env-file")]
-
-    if unsafe := [x.key for x in invocation.options if x.name in UNSAFE_FLAGS]:
-        return (Decision.DENY, f"`{invocation.command}` uses the {unsafe} options: they may escape the container into the host.")
-    if any(x.partition(":")[0] in ROOT_USERS for x in invocation.values("user")):
-        return (Decision.DENY, "Do not run a container as root.")
-    if invocation.has_arg(*DAEMON_FLAGS):
-        reasons.append(f"`{invocation.command}` re-targets the client (daemon, config directory or TLS identity).")
-
-    if "compose" in invocation.cmd_parts:
-        references += [Reference(access=Access.READ, text=x) for x in invocation.values("file")]
-        if unsafe := [x.key for x in invocation.options if x.name in COMPOSE_UNSAFE_FLAGS]:
-            reasons.append(f"`{invocation.command}` uses the {unsafe} global options, which are not allowed by default.")
-
-    # `docker --version` is the flag spelling of `docker version`, but it only vouches for itself:
-    # anything else on the line (an untabled flag included, since it carries no name) still needs the user validation.
-    if invocation.command == "docker" and invocation.has_arg("version"):
-        if extra := [x.key or x.value for x in invocation.arguments if x.name != "version"]:
-            reasons.append(f"`docker --version` requires the user validation when combined with the {extra} arguments.")
-        else:
-            return (Decision.ALLOW, "The `docker --version` command is allowed.")
-
-    elif invocation.command in RUN_COMMANDS:
-        mounts, unverified = parse_mount_ref(invocation)
-        allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_FLAGS if "compose" in invocation.cmd_parts else [])
-        if disallowed := [x.key for x in invocation.options if x.name not in allowed]:
-            reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
-        if unverified:
-            reasons.append(f"`{invocation.command}` mounts {format_references(unverified)}: only the project directory can be mounted by default.")
-        references += mounts
-
-    elif invocation.command in BUILD_COMMANDS:
-        references += [Reference(access=Access.READ, text=x) for x in parse_opt_paths(invocation, BUILD_READ_FLAGS)]
-        references += [Reference(access=Access.WRITE, text=x) for x in parse_opt_paths(invocation, BUILD_WRITE_FLAGS)]
-        # The operand is the build context: a local directory (in rare cases it may be a repository/URL, but we want to validate this too).
-        references += [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
-        if disallowed := [x.key for x in invocation.options if x.name not in BUILD_ALLOWED_FLAGS]:
-            reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
-
-    elif invocation.command in COPY_COMMANDS:
-        references += parse_copy_ref(invocation)
-        reasons += unknown_reasons(invocation, invocation.command)
-
-    elif invocation.command == "docker volume create":
-        # A bind-mounted volume carries its host path in `--opt device=/path`.
-        references += [Reference(access=Access.WRITE, text=x) for x in parse_opt_paths(invocation, ["opt"])]
-        reasons += unknown_reasons(invocation, invocation.command)
-
-    elif invocation.command in ALLOWED_COMMANDS:
-        references += [Reference(access=Access.WRITE, text=x) for x in invocation.values("output")]
-        reasons += unknown_reasons(invocation, invocation.command)
-
-    else:
-        reasons.append(f"The `{invocation.command}` command is not allowed by default.")
-
-    decision, reason = check_access(command, references, context)
-    if decision is Decision.DENY:
-        return (decision, reason)
-    elif decision is Decision.ASK:
-        reasons += [reason]
-
-    if any(reasons):
-        return (Decision.ASK, " ".join(reasons))
-    return (Decision.ALLOW, f"The `{invocation.command}` command is allowed.")
+    return bool(text) and bool(re.match(r"^-\D", text or ""))
 
 
 def is_path(text:str) -> bool:
@@ -242,6 +178,52 @@ def is_path(text:str) -> bool:
         return True
     return text.startswith(("/", "./", "../", "~", ".\\", "..\\", "\\")) or bool(re.match(r"^[A-Za-z]:[\\/]", text))
 
+
+def split_fields(value:str) -> dict[str, str]:
+    """
+    The `key=value,key=value` shape shared by `--mount`, `--opt`, `--cache-from`, ...
+    A bare field (`readonly`) maps to an empty value.
+    """
+    fields:dict[str, str] = {}
+    for field in value.split(","):
+        key, _, text = field.partition("=")
+        fields[key] = text
+    return fields
+
+
+def split_mount(spec:str) -> list[str]:
+    """
+    Split `source:target[:options]` on its separators, keeping a Windows drive letter with its path.
+    """
+    parts:list[str] = []
+    for part in spec.split(":"):
+        if parts and len(parts[-1]) == 1 and parts[-1].isalpha() and part.startswith(("/", "\\")):
+            parts[-1] += f":{part}"
+        else:
+            parts.append(part)
+    return parts
+
+
+def strip_container_argv(invocation:Invocation) -> Invocation:
+    """
+    Strip the command running inside the container for `docker exec` and `docker run`.
+
+    Docker stops reading its own options at the container/image operand, so everything behind it is the container's argv.
+    The boundary is the first operand, and nothing is stripped when it cannot be trusted:
+    - An untabled option is not paired with its value, so that value reads as the operand and the real one hides behind it.
+    - A tabled option that swallowed a flag-shaped value is docker's own reading too, but it is almost always a typo, so the line keeps being checked whole rather than newly allowed.
+    """
+    index = next((i for i, x in enumerate(invocation.arguments) if x.positional), None)
+    if index is None:
+        return invocation
+    if any(not x.known or is_flag(x.value) for x in invocation.arguments[:index]):
+        return invocation
+    return Invocation(cmd_parts=invocation.cmd_parts, arguments=invocation.arguments[:index + 1])
+
+
+# ============================================================================
+# Parsing functions
+# ============================================================================
 
 def parse_copy_ref(invocation:Invocation) -> list[Reference]:
     """
@@ -306,35 +288,94 @@ def parse_opt_paths(invocation:Invocation, names:list[str]) -> list[str]:
     return paths
 
 
-def split_fields(value:str) -> dict[str, str]:
-    """
-    The `key=value,key=value` shape shared by `--mount`, `--opt`, `--cache-from`, ...
-    A bare field (`readonly`) maps to an empty value.
-    """
-    fields:dict[str, str] = {}
-    for field in value.split(","):
-        key, _, text = field.partition("=")
-        fields[key] = text
-    return fields
+# ============================================================================
+# Main validate function
+# ============================================================================
 
 
-def split_mount(spec:str) -> list[str]:
+def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     """
-    Split `source:target[:options]` on its separators, keeping a Windows drive letter with its path.
+    The `docker` command is allowed per subcommand path (`docker container ls`).
+    - The sandbox-escaping options (`--privileged`, `--device`, ... and running as root) are denied everywhere.
+    - Status and lifecycle commands are allowed as-is: they act on docker objects, not on the host.
+    - The commands that reach the host filesystem (run/exec mounts, build, cp, volume create) are allowed only with tabled options and only for paths check_access validates.
+      The container side of a mount or a copy is never checked: it is inside the sandbox.
+    Everything else, including any untabled option on a restricted command, is an ask.
     """
-    parts:list[str] = []
-    for part in spec.split(":"):
-        if parts and len(parts[-1]) == 1 and parts[-1].isalpha() and part.startswith(("/", "\\")):
-            parts[-1] += f":{part}"
+    invocation = docker.parse(command)
+    reasons:list[str] = [] # reasons to ask are collected, not returned on the spot.
+    references = [Reference(access=Access.READ, text=x) for x in invocation.values("env-file")]
+
+    if invocation.command in RUN_COMMANDS:
+        invocation = strip_container_argv(invocation)
+
+    if unsafe := [x.key for x in invocation.options if x.name in UNSAFE_FLAGS]:
+        return (Decision.DENY, f"`{invocation.command}` uses the {unsafe} options: they may escape the container into the host.")
+    if any(x.partition(":")[0] in ROOT_USERS for x in invocation.values("user")):
+        return (Decision.DENY, "Do not run a container as root.")
+    if invocation.has_arg(*DAEMON_FLAGS):
+        reasons.append(f"`{invocation.command}` re-targets the client (daemon, config directory or TLS identity).")
+
+    if "compose" in invocation.cmd_parts:
+        references += [Reference(access=Access.READ, text=x) for x in invocation.values("file")]
+        if unsafe := [x.key for x in invocation.options if x.name in COMPOSE_UNSAFE_FLAGS]:
+            reasons.append(f"`{invocation.command}` uses the {unsafe} global options, which are not allowed by default.")
+
+    # `docker --version` is the flag spelling of `docker version`, but it only vouches for itself:
+    # anything else on the line (an untabled flag included, since it carries no name) still needs the user validation.
+    if invocation.command == "docker" and invocation.has_arg("version"):
+        if extra := [x.key or x.value for x in invocation.arguments if x.name != "version"]:
+            reasons.append(f"`docker --version` requires the user validation when combined with the {extra} arguments.")
         else:
-            parts.append(part)
-    return parts
+            return (Decision.ALLOW, "The `docker --version` command is allowed.")
+
+    elif invocation.command in RUN_COMMANDS:
+        mounts, unverified = parse_mount_ref(invocation)
+        allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_FLAGS if "compose" in invocation.cmd_parts else [])
+        if disallowed := [x.key for x in invocation.options if x.name not in allowed]:
+            reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
+        if unverified:
+            reasons.append(f"`{invocation.command}` mounts {format_references(unverified)}: only the project directory can be mounted by default.")
+        references += mounts
+
+    elif invocation.command in BUILD_COMMANDS:
+        references += [Reference(access=Access.READ, text=x) for x in parse_opt_paths(invocation, BUILD_READ_FLAGS)]
+        references += [Reference(access=Access.WRITE, text=x) for x in parse_opt_paths(invocation, BUILD_WRITE_FLAGS)]
+        # The operand is the build context: a local directory (in rare cases it may be a repository/URL, but we want to validate this too).
+        references += [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
+        if disallowed := [x.key for x in invocation.options if x.name not in BUILD_ALLOWED_FLAGS]:
+            reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
+
+    elif invocation.command in COPY_COMMANDS:
+        references += parse_copy_ref(invocation)
+        if invocation.unknown:
+            reasons += [f"`{invocation.command}` uses the {invocation.unknown} options, which are not in the grammar; cannot verify them."]
+
+    elif invocation.command == "docker volume create":
+        # A bind-mounted volume carries its host path in `--opt device=/path`.
+        references += [Reference(access=Access.WRITE, text=x) for x in parse_opt_paths(invocation, ["opt"])]
+        if invocation.unknown:
+            reasons += [f"`{invocation.command}` uses the {invocation.unknown} options, which are not in the grammar; cannot verify them."]
+
+    elif invocation.command in ALLOWED_COMMANDS:
+        references += [Reference(access=Access.WRITE, text=x) for x in invocation.values("output")]
+        if invocation.unknown:
+            reasons += [f"`{invocation.command}` uses the {invocation.unknown} options, which are not in the grammar; cannot verify them."]
+
+    else:
+        reasons.append(f"The `{invocation.command}` command is not allowed by default.")
+
+    decision, reason = check_access(command, references, context)
+    if decision is Decision.DENY:
+        return (decision, reason)
+    elif decision is Decision.ASK:
+        reasons += [reason]
+
+    if any(reasons):
+        return (Decision.ASK, " ".join(reasons))
+    return (Decision.ALLOW, f"The `{invocation.command}` command is allowed.")
 
 
-def unknown_reasons(invocation:Invocation, label:str) -> list[str]:
-    """
-    An option the grammar doesn't know is an option we cannot classify, so it needs the user validation.
-    """
-    if invocation.unknown:
-        return [f"`{label}` uses the {invocation.unknown} options, which are not in the grammar; cannot verify them."]
-    return []
+
+
+

@@ -27,14 +27,12 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 ## 1.4 Allowed folders
 
 6. [x] Rule: writes are automatic in **edit** mode only, so a **manual** mode write is an **ask** - whatever the tool that writes.
-       Current: only the file hook gated writes on the mode; the shell hook never read it, so `echo x > file` was **allowed** in **manual** mode.
 
 
 ## 2.3 Current directory
 
 7. [x] Rule: a lone `cd` is allowed. Current: every `cd` is denied.
-35. [x] Rule: the hook must know with certainty where the shell is. Current: the hook simulated the move to track it, and got it wrong in three ways — `-L`/`-P` canonicalization, a target that exists but cannot be entered (no `+x`, ex: `/root`), and a target an earlier command deletes.
-    Closed by dropping the simulation entirely: a `cd` is only allowed alone, so the hook always resolves against the directory the harness reports.
+35. [x] Rule: the hook must know with certainty where the shell is. Current: the hook simulated the move to track it, and got it wrong in three ways — `-L`/`-P` canonicalization, a target that exists but cannot be entered (no `+x`, ex: `/root`), and a target an earlier command deletes. Closed by dropping the simulation entirely: a `cd` is only allowed alone, so the hook always resolves against the directory the harness reports.
 
 
 ## 2.7 Alternative binaries
@@ -103,7 +101,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 29. [ ] Rule (3.3): `--user root`/`-u 0` is denied. Current: denied when the value is a separate word, allowed through when it is glued to the flag (`-u0`).
 30. [ ] Rule (3.3): only the project directory and other containers' volumes may be mounted. Current: `/tmp`, `/var/tmp` and (read-only) `~/.claude` may be mounted too.
 31. [ ] Rule (3.3): every mount source is checked. Current: a spec that repeats `source=`/`src=` only has one of the two checked, a bind-backed named volume declared through `--volume-opt device=` is not checked, and a spec carrying both `ro` and a contradicting `readonly` is read as read-only.
-32. [ ] Rule (3.3): the options allowed on run/exec/create are limited to the listed ones. Current: the container's own argv is read as docker options, so `docker run img ls -la` asks and `docker run img app --privileged` is denied.
+32. [ ] Rule (3.3): the container's own argv is not read as docker options. Current: dropped at the first operand, but only when every option before it is tabled and none swallowed a flag-shaped value — otherwise an option may be read as the operand, so the whole line stays under option parsing (`docker run -u0 alpine app --privileged` is still denied). `docker service create` is not covered: it takes an argv too, but is an ask by default.
 33. [ ] Rule (3.4): the build option paths are checked. Current: inside a structured value, only the path-looking fields are checked, so an unanchored one (`--output dest=secrets.env`) is skipped.
 
 
