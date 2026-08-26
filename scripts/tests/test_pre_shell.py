@@ -132,6 +132,94 @@ def test_readonly_double_dash_path_checks_the_operand():
     # -weird.pem is path-checked instead of being read as a flag.
     assert run(command="cat -- -weird.pem") == "deny"
 
+# ============================================================================
+# Read-only binaries: flag values
+# ============================================================================
+
+@pytest.mark.parametrize("cmd", [
+    "head -n $N notes.txt",              # a count, not a file
+    "tail -c $N notes.txt",
+    "cut -d $D -f1 notes.txt",           # a delimiter
+    "cmp -i $SKIP a.bin b.bin",
+    "ls -I $PAT .",                       # an ignore pattern
+    "diff -U $N a.txt b.txt",
+    "jq --arg k $VAL . data.json",       # `--arg` eats two words
+    "jq --argjson k $VAL . data.json",
+    "jq --indent $N . data.json",
+    "less -p $PAT notes.txt",
+])
+def test_readonly_flag_value_not_read_as_a_file(cmd):
+    # §2.8: only the files these commands read are path-checked. A tabled flag eats its value,
+    # so an expansion in it no longer lands in the operands and asks (gap #37).
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "ls --color .env",                   # --color takes an *optional* value
+    "diff --color .env b.txt",
+    "diff --unified .env b.txt",         # long spelling: optional, unlike -U
+    "diff --context .env b.txt",
+    "tail --follow .env",
+    "tail -f .env",
+])
+def test_readonly_optional_value_flag_does_not_swallow_the_file(cmd):
+    assert run(command=cmd) == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "diff --from-file=.env b.txt",       # every flag whose value is a path stays path-checked
+    "diff --to-file .env b.txt",
+    "diff -X .env a.txt b.txt",
+    "diff --exclude-from=.env a.txt b.txt",
+    "file -f .env",
+    "file -m .env notes.txt",
+    "wc --files0-from=.env",
+    "wc --files0-from .env",
+    "jq -f .env data.json",
+    "jq --slurpfile x .env . data.json", # the path is the *last* word of a two-value flag
+    "jq --rawfile x .env . data.json",
+    "less -k .env notes.txt",
+])
+def test_readonly_path_valued_flag_is_still_checked(cmd):
+    assert run(command=cmd) == "deny"
+
+@pytest.mark.parametrize("cmd", ["less -o .env notes.txt", "less --log-file=.env notes.txt"])
+def test_readonly_log_file_is_a_write(cmd):
+    assert run(command=cmd) == "deny"
+
+def test_readonly_log_file_write_asks_in_manual_mode():
+    # `less -o FILE` writes its log: the write rules apply, unlike every other operand.
+    assert run(command="less -o out.log notes.txt") == "ask"
+    assert run(command="less -o out.log notes.txt", mode="acceptEdits") == "allow"
+
+def test_readonly_multi_value_flag_missing_its_values_denied():
+    assert run(command="jq --arg k") == "deny"
+
+@pytest.mark.parametrize("cmd", ["jq '.items[]' data.json", "jq -r '.a.b' data.json", "jq . data.json"])
+def test_jq_filter_not_read_as_a_path(cmd):
+    # Same shape as `grep`: the first operand is the program, not a file, so its glob
+    # characters are not matched against the filesystem.
+    assert run(command=cmd) == "allow"
+
+def test_jq_filter_from_file_makes_every_operand_a_file():
+    assert run(command="jq -f prog.jq .env") == "deny"
+
+@pytest.mark.xfail(reason="parse_glued_args() requires every letter of a cluster to be a flag, so a path glued to a short flag (`-f.env`) is neither consumed as a value nor left in the operands: it is never checked at all (same cause as the docker `-u0` gap)", strict=True)
+@pytest.mark.parametrize("cmd", [
+    "file -f.env",
+    "diff -X.env a.txt b.txt",
+    "jq -f.env",
+    "less -k.env notes.txt",
+    "less -o.env notes.txt",
+    "grep -f.env pattern",
+])
+def test_readonly_glued_path_value_still_checked(cmd):
+    assert run(command=cmd) == "deny"
+
+def test_test_operands_still_path_checked():
+    # `test -f FILE` is a unary operator, not a value-taking flag: tabling `-f` would
+    # hide the path it names.
+    assert run(command="test -f .env") == "deny"
+    assert run(command="test -r ~/.ssh/id_rsa") == "deny"
+
 def test_assignment_only_allowed():
     assert run(command="FOO=bar") == "allow"
 

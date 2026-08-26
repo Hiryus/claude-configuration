@@ -4,12 +4,11 @@ import re
 import sys
 from collections.abc import Mapping
 
-from analyzers import docker, find, git, grep, sed
+from analyzers import docker, find, git, grep, readonly, sed
 from generic import check_access, check_mode_rules, format_response, worst
 from models.analyzer import Context, Decision
-from models.grammar import CommandSyntax
 from models.parsing import Access, CommandLine, ContextError, ParseError, Reference
-from parsers import arguments, bash
+from parsers import bash
 from utils.format import describe_refs
 
 # ============================================================================
@@ -43,12 +42,8 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
     if command.base in ["bash", "cmd", "dash", "exec", "eval", "ksh", "powershell", "pwsh", "sh", "zsh"]:
         return (Decision.DENY, "Do not invoke another shell or eval a command. Run the command directly via Bash.")
 
-    # No awk/sed: they can execute arbitrary programs.
-    # No sort/uniq either: `sort -o FILE` and `uniq INPUT OUTPUT` write a file.
-    if command.base in ["cat", "cmp", "cut", "diff", "file", "head", "jq", "less",  "ls", "more", "tail", "test", "wc"]:
-        invocation = arguments.parse(command_line=command, syntax=CommandSyntax(aliases=[command.base]))
-        references = [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]
-        return check_access(command, references, context)
+    if readonly.handles(command.base):
+        return readonly.validate(command, context)
 
     if command.base in ["cd", "popd", "pushd"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
