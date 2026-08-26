@@ -157,10 +157,6 @@ def test_denied_commands(cmd):
 def test_python_denied(cmd):
     assert run(command=cmd) == "deny"
 
-@pytest.mark.xfail(reason="rule 2.7/2.15: analyzers/uv.py was deleted in the refactor, so no uv rule is enforced", strict=True)
-def test_uv_run_mypy_denied():
-    assert run(command="uv run mypy") == "deny"
-
 @pytest.mark.parametrize("cmd", [
     "bash -c 'cat .env'",
     "ksh -c x",
@@ -452,22 +448,6 @@ def test_git_dir_env_via_export_denied():
     assert run(command="export GIT_DIR=/etc; git log") == "deny"
 
 # ============================================================================
-# uv  (rule 2.15 -- analyzers/uv.py was deleted in the refactor)
-# ============================================================================
-
-@pytest.mark.xfail(reason="rule 2.15: analyzers/uv.py was deleted in the refactor, so every uv call falls through to the unknown-command ask", strict=True)
-@pytest.mark.parametrize("cmd", ["uv sync", "uv run pytest", "uv run ruff check", "uv --version"])
-def test_uv_allowed(cmd):
-    assert run(command=cmd) == "allow"
-
-def test_uv_unknown_tool_asks():
-    assert run(command="uv run black .") == "ask"
-
-@pytest.mark.parametrize("cmd", ["uv run --frozen", "uv run --no-sync", "uv run"])
-def test_uv_run_without_tool_asks(cmd):
-    assert run(command=cmd) == "ask"
-
-# ============================================================================
 # find
 # ============================================================================
 
@@ -656,14 +636,6 @@ def test_git_output_secret_denied():
 
 def test_git_output_flag_without_value_does_not_crash():
     assert run(command="git show -o") == "deny"
-
-# ============================================================================
-# uv run python --version
-# ============================================================================
-
-@pytest.mark.xfail(reason="rule 2.15: analyzers/uv.py was deleted in the refactor", strict=True)
-def test_uv_run_python_version_allowed():
-    assert run(command="uv run python --version") == "allow"
 
 # ============================================================================
 # Case-sensitive command matching
