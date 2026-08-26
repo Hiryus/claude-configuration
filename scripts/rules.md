@@ -287,16 +287,19 @@ Thus, agents are requested to run commands in a container when they are not auto
 
 The following global `compose` options (`docker compose -f compose.yml up`) are **allowed**:
 `--ansi`,
+`--dry-run`,
 `--env-file` (path is subject to the [File rules](#1-file-rules)),
 `-f`/`--file` (path is subject to the [File rules](#1-file-rules)),
 `--parallel`,
 `--profile`,
 `--progress`,
 `-p`/`--project-name`.
-The `--env-file` and `-f`/`--file` values are subject to the [File rules](#1-file-rules). Any other global option (including `--project-directory`) is an **ask**.
+
+Any other global option (including `--project-directory`) is an **ask**.
 
 **Reason**: These options are needed to target the right compose project, and their files can be verified.
-`--project-directory` is excluded because it re-anchors every relative path of the compose file (build contexts, volumes).
+- `--dry-run` only simulates the command, so it is usually safe and can never do more than the "no dry-run" command anyway.
+- `--project-directory` is excluded because it re-anchors every relative path of the compose file (build contexts, volumes).
 
 ### 3.2. Status commands
 
@@ -377,6 +380,7 @@ The following commands are **allowed** (as long as they don't use one of the abo
 
 The `docker compose exec`, `docker compose run`, `docker container create`/`docker create`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory and volumes from other containers can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
 - `-d`/`--detach`,
+- `--dry-run` (compose only, cf. §3.1),
 - `--entrypoint`,
 - `-e`/`--env`,
 - `--env-file`,
@@ -388,6 +392,7 @@ The `docker compose exec`, `docker compose run`, `docker container create`/`dock
 - `--health-start-period`,
 - `--health-timeout`,
 - `--help`,
+- `-i`/`--interactive`,
 - `--name`,
 - `--network`,
 - `--network-alias`,
