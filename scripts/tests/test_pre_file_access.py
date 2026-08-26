@@ -106,6 +106,26 @@ def test_template_suffixes_are_exempted(suffix):
 def test_dist_suffix_is_not_a_template():
     assert run(file_path="/proj/.ssh/config.dist") == "deny"
 
+@pytest.mark.parametrize("relative", [".claude/.credentials.json", ".claude.json"])
+def test_harness_credentials_read_denied(monkeypatch, relative):
+    # Rule 1.1: the harness directory is readable (rule 1.4), except its tokens.
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    assert run(file_path=str(Path(FAKE_HOME) / relative), tool_name="Read") == "deny"
+
+def test_harness_credentials_write_denied_when_the_harness_is_the_project(monkeypatch):
+    # Rule 1.1 beats rule 1.3's exception: working *on* the harness does not
+    # make its tokens writable.
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    harness = Path(FAKE_HOME) / ".claude"
+    assert run(file_path=str(harness / ".credentials.json"), tool_name="Write", cwd=str(harness), mode="acceptEdits") == "deny"
+
+def test_harness_configuration_is_not_a_credentials_file(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    assert run(file_path=str(Path(FAKE_HOME) / ".claude" / "settings.json"), tool_name="Read") == "allow"
+
 # ============================================================================
 # Git files
 # ============================================================================

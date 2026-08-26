@@ -21,12 +21,14 @@ Every call runs in exactly one mode, derived from the harness permission mode:
 The agent is **denied** to **access** (read and write) files containing credentials, whatever their location, including:
 - Files with the `.pem`/`.key`/`.p12`/`.pfx`/`.keystore`/`.jks`, `.htpasswd`/`.netrc`/`.npmrc`/`.pgpass` extensions/names,
 - The dotenv (`.env`/`.env.local`/`.env.production`) and usual ssh key (`id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`) files,
-- _TODO: add harness credentials files._
+- The harness credentials files (`.credentials.json` holding the OAuth tokens, `.claude.json` holding the account identity and the MCP servers environment, and `~/.claude/sessions/*.key` files),
 - Any files under `.ssh/`.
 
 Template files (`.example`, `.sample`, `.template` suffix) are exempted from this rule.
 
 **Reason**: Tool results are streamed to an untrusted third party service for LLM inference while secrets should never be shared anywhere.
+
+NB: The harness _configuration_ files (`settings.json`, `.mcp.json`, ...) are not covered: the agent legitimately reads them (cf. §1.4) and they are not supposed to hold secrets.
 
 ### 1.2. No git file modifications
 
@@ -139,12 +141,12 @@ The `gh` command is **denied** in favor of the github MCP.
 
 ### 2.8. Read-only binaries
 
-The `cut`, `echo`, `printf`, `pwd`, `sleep`, `tr`, and `uniq` binaries are **allowed**.
-Simple variable substitutions (`$VAR` or `${VAR}`) are **allowed** as argument.
+The `echo`, `printf`, `pwd`, `sleep`, and `tr` binaries are **allowed**.
+Simple variable substitutions (`$VAR` or `${VAR}`) are **allowed** as argument to these commands.
 
 **Reason:** They only print or format information and do not access any file.
 
-For the `cat`, `cmp`, `diff`, `file`, `head`, `jq`, `less`, `ls`, `more`, `sort`, `tail`, `test`, and `wc` binaries, the [File rules](#1-file-rules) apply.
+For the `cat`, `cmp`, `cut`, `diff`, `file`, `head`, `jq`, `less`, `ls`, `more`, `tail`, `test`, and `wc` binaries, the [File rules](#1-file-rules) apply.
 
 For the `grep` binary, positional arguments are treated as _read_ accesses, minus the search pattern itself.
 The `-f`/`--file` argument value is a _read_ access too.
