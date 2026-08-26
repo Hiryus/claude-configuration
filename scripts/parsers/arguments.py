@@ -55,7 +55,7 @@ def parse_flag(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> l
     # Known flag (as a whole token), consume value if any
     if flag := next((x for x in potential_flags if key in x.keys), None):
         value = parse_value(key=key, token=token, tokens=tokens, value_required=flag.value_required)
-        return [Argument(key=key, name=flag.name, value=value, expansions=token.expansions)]
+        return [build_argument(key=key, name=flag.name, token=token, value=value)]
 
     # Not a known flag as a whole token.
     # Try to split it into individual short flags (ex: "-it" -> "-i", "-t").
@@ -65,7 +65,7 @@ def parse_flag(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> l
 
     # Unknown flag: record it and do not consume next token as value
     value = parse_value(key=key, token=token, tokens=tokens, value_required=False)
-    return [Argument(key=key, name=None, value=value, known=False, expansions=token.expansions)]
+    return [build_argument(key=key, name=None, token=token, value=value, known=False)]
 
 
 def parse_glued_args(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> list[Argument] | None:
@@ -96,17 +96,35 @@ def parse_glued_args(token:Token, tokens:list[Token], potential_flags:list[Flag]
             results.append(Argument(key=flag.keys[0], name=flag.name, value=None, expansions=token.expansions))
         else:
             value = parse_value(key=flag.name, token=token, tokens=tokens, value_required=flag.value_required)
-            results.append(Argument(key=flag.keys[0], name=flag.name, value=value, expansions=token.expansions))
+            results.append(build_argument(key=flag.keys[0], name=flag.name, token=token, value=value))
 
     return results
 
 
-def parse_value(key:str, token:Token, tokens:list[Token], value_required:bool) -> str | None:
+def parse_value(key:str, token:Token, tokens:list[Token], value_required:bool) -> Token | None:
+    """
+    The value of a flag, either glued behind an `=` or taken from the next word.
+    It stays a `Token` so a `--file $VAR` value keeps the expansions of the word it came from: they
+    belong to the value, not to the flag, and the path check reads them off the resulting `Argument`.
+    """
     if "=" in token.text:
-        return token.text.partition("=")[2]
+        return Token(text=token.text.partition("=")[2], expansions=token.expansions)
     elif value_required:
         if len(tokens) == 0:
             raise ParseError(f"flag {key} requires a value, but none was provided")
-        return tokens.pop(0).text
+        return tokens.pop(0)
     else:
         return None
+
+
+def build_argument(key:str, name:str|None, token:Token, value:Token|None, known:bool = True) -> Argument:
+    """
+    Pair a flag token with the value it consumed, carrying the expansions of both.
+    """
+    return Argument(
+        key=key,
+        name=name,
+        value=value.text if value is not None else None,
+        known=known,
+        expansions=token.expansions | (value.expansions if value is not None else frozenset()),
+    )

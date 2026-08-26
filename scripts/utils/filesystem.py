@@ -30,7 +30,9 @@ def expand_references(references: list[Reference], cwd: Path) -> list[Reference]
     """
     expanded = []
     for ref in references:
-        if not has_glob(ref.text):
+        if ref.dynamic or not has_glob(ref.text):
+            # A dynamic path is not the pattern bash will glob, so expanding it here would match on
+            # the wrong text. It is kept whole and reported as dynamic.
             expanded.append(ref)
             continue
         matches = expand_glob(ref.text, cwd)
@@ -93,9 +95,10 @@ def standardize(input_path: str, cwd: Path) -> Path:
     """
     Turn a written path into the real one it designates, anchoring a relative path on the current directory (which moves with `cd`).
     Symlinks are followed, like the kernel does for a path handed to a command.
+
+    Only `~` is expanded. A `$VAR` is deliberately left literal: the hook's environment is not the
+    shell's, so resolving it would invent a target. Such a path is caught as dynamic instead (rule 2.5).
     """
-    # Resolve variables (order matters)
-    input_path = os.path.expandvars(input_path)
     input_path = os.path.expanduser(input_path)
     # Handle POSIX paths on Windows
     if sys.platform == "win32" and input_path.startswith("/"):

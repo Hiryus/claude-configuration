@@ -101,9 +101,9 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
             return (Decision.ALLOW, f"The `{invocation.command}` command is allowed.")
         return (Decision.ASK, f"The `{invocation.command}` command is not allowed by default.")
 
-    references = [Reference(access=Access.WRITE, text=x) for x in invocation.values("output")]
+    references = invocation.references(Access.WRITE, "output")
     if verb in ["add", "commit"]:
-        references += [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
+        references += [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]
     if any(references):
         decision, reason = check_access(command, references, context)
         if decision is not Decision.ALLOW:
@@ -120,8 +120,8 @@ def validate_config(command:CommandLine, invocation:Invocation, context:Context)
     Anything that is not provably a read is a write: a write verb (`set`, `unset`, `edit`, ...), an untabled flag (`--add`, `--unset`, `--replace-all`, ...), or a second operand (`git config <name> <value>`).
     Only an explicit `--file` goes through check_access: the implicit config files (`~/.gitconfig`, `.git/config`) sit outside the project and would turn every read into an ASK.
     """
-    references = [Reference(access=Access.READ, text=x) for x in invocation.values("file")]
-    references += [Reference(access=Access.WRITE, text=x) for x in invocation.values("output")]
+    references = invocation.references(Access.READ, "file")
+    references += invocation.references(Access.WRITE, "output")
     if any(references):
         decision, reason = check_access(command, references, context)
         if decision is not Decision.ALLOW:

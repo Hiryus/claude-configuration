@@ -27,9 +27,9 @@ def referenced_paths(command: CommandLine) -> list[Reference]:
         if redirect.target.text == "/dev/null":
             continue  # ignore /dev/null which is not a real file
         if redirect.type in (">", ">>", ">|", "&>", "&>>"):
-            refs.append(Reference(access=Access.WRITE, text=redirect.target.text))
+            refs.append(Reference(access=Access.WRITE, text=redirect.target.text, expansions=redirect.target.expansions))
         elif redirect.type in ("<", "<>", "<<<"):
-            refs.append(Reference(access=Access.READ, text=redirect.target.text))
+            refs.append(Reference(access=Access.READ, text=redirect.target.text, expansions=redirect.target.expansions))
     return refs
 
 # ============================================================================
@@ -47,7 +47,7 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
     # No sort/uniq either: `sort -o FILE` and `uniq INPUT OUTPUT` write a file.
     if command.base in ["cat", "cmp", "cut", "diff", "file", "head", "jq", "less",  "ls", "more", "tail", "test", "wc"]:
         invocation = arguments.parse(command_line=command, syntax=CommandSyntax(aliases=[command.base]))
-        references = [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
+        references = [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]
         return check_access(command, references, context)
 
     if command.base in ["cd", "popd", "pushd"]:

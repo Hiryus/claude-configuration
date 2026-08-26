@@ -562,8 +562,50 @@ def test_test_command_external_asks():
 # Dynamic / unknown / unparseable commands
 # ============================================================================
 
-def test_dynamic_command_asks():
-    assert run(command="cat $(echo .env)") == "ask"
+@pytest.mark.parametrize("cmd", [
+    "cat $(echo .env)",                              # command substitution
+    "cat `echo .env`",                               # ... in its backtick spelling
+    "cat $SECRET",                                   # bare parameter, unset for the hook
+    "cat ${SECRET}",                                 # ... in its braced spelling
+    "V=~/.ssh/id_rsa; cat $V",                       # the value the hook would need is set by an earlier command
+    "cat $HOME/notes.txt",                           # the expansion is only a prefix of the path
+    "echo x > $OUT",                                 # a redirect target is a path too
+    "grep foo $F",                                   # positional operand
+    "grep -f $P .",                                  # ... and a flag value, given as a separate word
+    "find $D -name x",
+    "sed -n 1,5p $F",
+    "git add $F",
+    "docker build -f $F .",
+    "docker run --rm --env-file $E alpine",
+])
+def test_dynamic_path_asks(cmd):
+    # Rule 2.5: the hook's environment is not the shell's, so it never learns the real target.
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm -v $SPEC alpine",     # `split_mount` sees no separator: it is not an anonymous volume
+    "docker run --rm --mount $SPEC alpine",  # `split_fields` sees no `source=`: the host is still exposed
+    "docker build --output dest=$X .",     # the field value does not look like a path, but it becomes one
+])
+def test_dynamic_mount_spec_asks(cmd):
+    # A whole spec held in one variable must not read as "nothing of the host is exposed".
+    assert run(command=cmd) == "ask"
+
+def test_dynamic_path_still_denied_on_its_visible_secret():
+    # The DENY checks read the literal text, so an expansion in the path does not downgrade them.
+    assert run(command="cat $HOME/.ssh/id_rsa") == "deny"
+
+@pytest.mark.parametrize("cmd", [
+    "echo $HOME",        # rule 2.8: these commands reference no file, so nothing is path-checked
+    "printf %s $X",
+    "cd $HOME",          # rule 2.3: the hook does not resolve the target, cf. test_lone_cd_allowed
+])
+def test_expansion_without_a_path_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_tilde_is_not_dynamic():
+    # Rule 2.5 exempts a leading `~`: `standardize` resolves it exactly like bash does.
+    assert "expansion" not in reason(command="cat ~/notes.txt")
 
 def test_unknown_command_asks():
     assert run(command="frobnicate --hard") == "ask"

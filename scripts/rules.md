@@ -113,9 +113,10 @@ All files accessed follow the [File rules](#1-file-rules), including:
 A path that looks like a glob pattern (`*`, `?`, `[`, `{`, `(`) is expanded against the real filesystem.
 Each match is checked with the [File rules](#1-file-rules).
 
-If any path is built from a substitution or expansion (`$(...)`, `` `...` ``, `$VAR`, arithmetic, ...), the whole command is considered "dynamic", resulting in **ask**, since its real target can't be verified statically.
-The following exceptions apply:
-- A leading `~` is expanded to the user home.
+If a path is built from a substitution or expansion (`$(...)`, `` `...` ``, `$VAR`, arithmetic, ...), it is "dynamic" and results in an **ask**, since its real target can't be verified statically.
+- One exception: a leading `~` is expanded to the user home.
+- The check is on the path, not on the command line: an expansion that reaches no path (`echo $HOME`, `docker run -e K=$V`) changes nothing.
+- A dynamic path is still subject to the **deny** rules on the text that remains visible, so `cat $HOME/.ssh/id_rsa` is **denied** rather than asked.
 
 The overall decision is the worst decision across all matched files (**deny** > **ask** > **allow**).
 
