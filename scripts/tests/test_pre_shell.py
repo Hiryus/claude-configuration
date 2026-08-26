@@ -112,9 +112,20 @@ def test_meaningful_description_allowed():
 # Read-only allow list
 # ============================================================================
 
-@pytest.mark.parametrize("cmd", ["ls", "pwd", "wc -l foo", "echo hi", "sort x"])
+@pytest.mark.parametrize("cmd", ["ls", "pwd", "wc -l foo", "echo hi", "cut -d: -f1 x"])
 def test_readonly_allowed(cmd):
     assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize("cmd", [
+    "uniq",                 # §2.8: `uniq [INPUT [OUTPUT]]` writes its second operand
+    "uniq -c in.txt",
+    "uniq in.txt out.txt",
+    "sort",                 # §2.8: `sort -o FILE` writes its output
+    "sort in.txt",
+    "sort -o out.txt in.txt",
+])
+def test_writing_filters_not_in_the_allow_list(cmd):
+    assert run(command=cmd) == "ask"
 
 def test_readonly_double_dash_path_checks_the_operand():
     # §5.2/§4.1.3: `--` must reach the untabled read-only group too, so
@@ -188,6 +199,10 @@ def test_file_outside_project_asks():
 
 def test_redirect_into_secret_denied():
     assert run(command="echo x > .env") == "deny"
+
+def test_cat_harness_credentials_denied():
+    # 1.1: the harness is readable, its tokens are not.
+    assert run(command="cat ~/.claude/.credentials.json") == "deny"
 
 # ============================================================================
 # File-access
@@ -654,11 +669,10 @@ def test_uppercase_python_still_denied():
 # ============================================================================
 
 @pytest.mark.parametrize("cmd", [
-    "sort .env",            # prints the file
     "cut -d= -f2 .env",     # prints selected fields
+    "head -1 .env",         # prints the first line
     "diff .env /dev/null",  # prints the whole file as a diff
     "jq . .env",            # parses and prints the file
-    "uniq .env",            # prints the file
 ])
 def test_readonly_command_secret_disclosure_denied(cmd):
     assert run(command=cmd) == "deny"
@@ -680,7 +694,7 @@ def test_glob_write_in_nonexistent_project_still_asks():
 
 @pytest.mark.parametrize("cmd", [
     "ls /etc",                  # lists an external dir
-    "sort /etc/passwd",         # reads an external file
+    "cat /etc/passwd",          # reads an external file
     "find / -name id_rsa",      # traverses outside the project
 ])
 def test_external_access_via_allowed_command_not_allowed(cmd):

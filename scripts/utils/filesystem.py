@@ -76,6 +76,8 @@ def is_secret(path: Path) -> bool:
         return True
     if name in [".htpasswd", ".netrc", ".npmrc", ".pgpass"]:
         return True
+    if name in [".credentials.json", ".claude.json"]:
+        return True
     if any(part.lower() == ".ssh" for part in path.parts):
         return True
     return name in ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]

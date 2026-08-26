@@ -44,7 +44,8 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
         return (Decision.DENY, "Do not invoke another shell or eval a command. Run the command directly via Bash.")
 
     # No awk/sed: they can execute arbitrary programs.
-    if command.base in ["cat", "cmp", "cut", "diff", "file", "head", "jq", "less",  "ls", "more", "sort", "tail", "test", "uniq", "wc"]:
+    # No sort/uniq either: `sort -o FILE` and `uniq INPUT OUTPUT` write a file.
+    if command.base in ["cat", "cmp", "cut", "diff", "file", "head", "jq", "less",  "ls", "more", "tail", "test", "wc"]:
         invocation = arguments.parse(command_line=command, syntax=CommandSyntax(aliases=[command.base]))
         references = [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
         return check_access(command, references, context)
