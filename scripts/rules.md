@@ -133,14 +133,6 @@ The `exec`, `eval`, `source` and `.` commands are also **denied**.
 
 ### 2.7. Alternative binaries
 
-The `pip` and `pip3` commands are **denied** in favor of `uv`.
-
-The `python` and `python3` commands are **denied** in favor of `uv` (or `uvx`).
-Running python from a virtual environment (venv) is also denied.
-
-The `mypy` command is **denied** in favor of `ty` (`uv run ty`).
-Running mypy via the `uv` command is also denied.
-
 The `gh` command is **denied** in favor of the github MCP.
 
 **Reason**: This rule is not a security constraint, but more a way to force the agent to respect our standard tools.
@@ -265,12 +257,6 @@ The `sed` command is **allowed** with a subset of options: `-n`/`--quiet`/`--sil
 - The aim is to allow simple read operations without coding a complex parser.
 - In the future, we may also allow to update a string or a file in **edit mode**.
 - Any other option is deemed "too complex to verify" and triggers an **ask**.
-
-### 2.15. Specific uv rules
-
-TODO: copy strategy from npm.
-+ allow `uv run python --version`
-+ allow `uv run basedpyright/pyright/ruff/ty` (not `pytest`) - need edit mode?
 
 ## 3. Containers rules
 

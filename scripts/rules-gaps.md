@@ -35,12 +35,6 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 35. [x] Rule: the hook must know with certainty where the shell is. Current: the hook simulated the move to track it, and got it wrong in three ways — `-L`/`-P` canonicalization, a target that exists but cannot be entered (no `+x`, ex: `/root`), and a target an earlier command deletes. Closed by dropping the simulation entirely: a `cd` is only allowed alone, so the hook always resolves against the directory the harness reports.
 
 
-## 2.7 Alternative binaries
-
-8. [ ] Rule: `python`/`python3` are denied, including from a virtual environment. Current: **ask**.
-9. [ ] Rule: `mypy` run through `uv` is denied. Current: **ask**.
-
-
 ## 2.8 Read-only binaries
 
 10. [ ] Rule: `cut` and `uniq` are allowed unconditionally. Current: they are path-checked like `cat`, so `cut -d: -f1 /etc/passwd` asks.

@@ -82,10 +82,6 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
     if command.base == "sed":
         return sed.validate(command, context)
 
-    # TODO: allow the use of ty and ruff
-    # if command.base == "uv":
-    #     return uv.validate(command, context)
-
     # Unknown command -> consent, surfacing any files involved.
     if accesses := describe_refs(references):
         return (Decision.ASK, f"`{command.base}` is not in the allow-list ({accesses}).")
