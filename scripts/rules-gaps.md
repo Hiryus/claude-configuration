@@ -3,7 +3,6 @@
 Gaps between `rules.md` and the current behavior. Rules that are correctly implemented are omitted, so the numbering has holes.
 
 **Loosening the sandbox** (the rest are stricter than the rule, or wrong in a harmless direction):
-- **2.5** (#36) — a `$VAR` path is never seen as dynamic, so `V=~/.ssh/id_rsa; cat $V` is allowed, credentials rule included.
 - **2.13/3.x** (#28) — `podman` is unknown, so `podman run --privileged` asks instead of denying.
 
 
@@ -38,9 +37,12 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 ## 2.5 Filesystem access
 
-36. [ ] Rule: a path built from a substitution or expansion makes the whole command dynamic, hence an **ask**.
-        Current: nothing reads `CommandLine.dynamic`/`Argument.is_dynamic` - they are dead code. `standardize` runs `os.path.expandvars` against the *hook's* environment (not the shell's), and an unset variable stays literal and is then vetted as a plain filename, so `cat $SECRET` resolves to `<project>/$SECRET` and is allowed.
-        `$(...)` and `${VAR}` only ask by accident: `(`, `)`, `{` and `}` are in the `has_glob` character set. A bare `$VAR` carries none of them.
+36. [x] Rule: a path built from a substitution or expansion makes the whole command dynamic, hence an **ask**.
+        Closed on the *reference*, not on the command line: the rule's trigger is a **path** built from an expansion, and "the whole command is dynamic" adds nothing once the verdicts aggregate to the worst one. `Reference` now carries the expansions of the token it came from and `check_file_rules` asks on them, after the deny checks (those read the literal text, so `cat $HOME/.ssh/id_rsa` stays a **deny** on its visible `.ssh`). `standardize` no longer runs `expandvars` — resolving the *hook's* environment invented a target the shell would not use.
+        Anchoring the check on the reference is also what keeps §2.8 working for free (cf. #11): `echo $HOME` references no file, so nothing is ever checked, and no exemption list is needed.
+        Two holes found while closing it: a flag value given as a separate word (`-f $VAR`) carried the *flag*'s expansions, not the value's; and a mount spec entirely held in a variable (`-v $SPEC`, `--mount $SPEC`) escaped through the structural short-circuits (`split_mount` finds no separator, `split_fields` no `source=`), so nothing was referenced at all.
+        Left as-is: `$((1+2))` maps to no `Expansion` member, so it is a **deny** rather than an **ask** — stricter than the rule.
+        Side effect on the file hooks: `Read`/`Write` paths carry no expansion metadata, so a literal `$HOME/notes.txt` handed to the tool is now vetted as `<project>/$HOME/notes.txt` (**allow**) instead of resolving outside the project (**ask**). The harness always passes a real path, so this is theoretical.
 
 
 ## 2.8 Read-only binaries
@@ -49,6 +51,8 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
         Closed by fixing the rule, not the code: `cut` and `uniq` take their files as positional operands (no flag involved), and both `sort -o FILE` and `uniq INPUT OUTPUT` write a file, so neither of those two is read-only.
 11. [x] Rule: a simple `$VAR`/`${VAR}` substitution is allowed as an argument to these commands. Current: `echo $HOME` is allowed - these commands reference no file, so nothing is ever checked.
         Never a real gap: closed by observation, not by a code change. The opposite problem is real, cf. #36.
+37. [ ] Rule: only the files these commands read are path-checked. Current: they are parsed with an empty flag table, so no flag consumes its value and every flag value lands in the positionals, i.e. is read as a file.
+        Harmless until #36, which made it visible: a flag value holding an expansion now asks (`head -n $N file`, `jq --arg k "$VAL" . file.json`, `cut -d $D -f1 file`). Over-strict, same shape as the #21 amplification. Fixing it means giving each of these binaries the few flags that take a value.
 
 
 ## 2.9.1 Git directory
@@ -75,6 +79,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 19. [ ] Rule: `git mv` and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
 20. [ ] Rule: `git add` is allowed. Current: its pathspecs are path-checked, so a pathspec outside the project asks.
 21. [ ] Rule: `git commit` is path-checked only when `--only`/`-o` is supplied. Current: its pathspecs are path-checked in every case.
+        Amplified by #36: `-m` is untabled, so it does not consume its value and the message lands in the positionals. A message that used to pass as an in-project filename now asks as soon as it holds an expansion (`git commit -m "$MSG"`).
 
 
 ## 2.9.5 Read-only commands

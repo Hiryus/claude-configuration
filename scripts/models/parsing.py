@@ -48,10 +48,6 @@ class Token:
     text:str
     expansions:frozenset[Expansion] = frozenset()
 
-    @property
-    def dynamic(self) -> bool:
-        return bool(self.expansions - {Expansion.TILDE})
-
 @dataclass(frozen=True)
 class Assignment:
     """
@@ -75,6 +71,15 @@ class Reference:
     """
     access:Access
     text:str
+    expansions:frozenset[Expansion] = frozenset()  # carried over from the source Token/Argument
+
+    @property
+    def dynamic(self) -> bool:
+        """
+        The path is built from a shell expansion, so the hook only sees the pattern, never the real target.
+        A leading `~` is the exception: `standardize` resolves it the same way bash does.
+        """
+        return bool(self.expansions - {Expansion.TILDE})
 
 @dataclass
 class CommandLine:
@@ -98,12 +103,6 @@ class CommandLine:
         subcommand = next((arg.text for arg in self.args if not arg.text.startswith("-")), None)
         return subcommand.lower() if subcommand else None
 
-    @property
-    def dynamic(self) -> bool:
-        return self.program.dynamic or any(a.dynamic for a in self.args) \
-            or any(a.value.dynamic for a in self.assignments) \
-            or any(r.target.dynamic for r in self.redirects)
-
 # ============================================================================
 # Higher level commands (Invocations) and their arguments
 # ============================================================================
@@ -122,10 +121,6 @@ class Argument:
     @property
     def positional(self) -> bool:
         return self.key is None
-
-    @property
-    def is_dynamic(self) -> bool:
-        return bool(self.expansions - {Expansion.TILDE})
 
 @dataclass
 class Invocation:
@@ -163,8 +158,16 @@ class Invocation:
     def has_arg(self, *names:str) -> bool:
         return any(a.name in names for a in self.options)
 
-    def values(self, *names:str) -> list[str]:
+    def references(self, access:Access, *names:str) -> list[Reference]:
         """
-        Every value given to `names`, for the options that may repeat (`-v`, `-e`).
+        Every value given to `names`, read as a path, keeping the expansions it was built from.
         """
-        return [a.value for a in self.options if a.name in names and a.value is not None]
+        return [Reference(access=access, text=a.value, expansions=a.expansions) for a in self.values(*names) if a.value is not None]
+
+    def values(self, *names:str) -> list[Argument]:
+        """
+        Every option given to `names` that carries a value, for the ones that may repeat (`-v`, `-e`).
+        The `Argument` is kept whole rather than reduced to its text, so its expansions survive into
+        the `Reference` built from it.
+        """
+        return [a for a in self.options if a.name in names and a.value is not None]

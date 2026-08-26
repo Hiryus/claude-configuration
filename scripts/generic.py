@@ -61,6 +61,9 @@ def check_file_rules(references: list[Reference], context: Context) -> tuple[Dec
     The [File rules](rules.md#1-file-rules), applied to every path a call
     accesses, whatever the tool that accesses them.
     The decision is the worst one across all the references.
+
+    A path built from an expansion is an ASK, but only after the DENY checks:
+    those read  the literal text, so `cat $HOME/.ssh/id_rsa` is still refused on its visible `.ssh` segment.
     """
     expanded = expand_references(references, context.current_cwd)
     resolved = [(ref, standardize(ref.text, context.current_cwd)) for ref in expanded]
@@ -70,6 +73,8 @@ def check_file_rules(references: list[Reference], context: Context) -> tuple[Dec
         return (Decision.DENY, f"Refusing to write {format_references(gitdir_files)} inside the .git directory.")
     if harness_files := [ref.text for ref, path in resolved if ref.access is Access.WRITE and is_claude_dir(path) and not in_project(path, context.project_root)]:
         return (Decision.DENY, f"Refusing to write {format_references(harness_files)} inside the harness directory.")
+    if dynamic_files := [ref.text for ref, _ in resolved if ref.dynamic]:
+        return (Decision.ASK, f"{format_references(dynamic_files)} is built from a shell expansion; cannot statically verify which file it targets.")
     if glob_files := [ref.text for ref, _ in resolved if has_glob(ref.text)]:
         return (Decision.ASK, f"{format_references(glob_files)} looks like a glob pattern; cannot statically verify which files it matches.")
     if external_files := [ref.text for ref, path in resolved if not is_file_access_allowed(path, context.project_root, read=ref.access is Access.READ)]:

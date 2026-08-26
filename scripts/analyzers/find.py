@@ -22,10 +22,10 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
         if arg.value is None:
             raise ParseError(f"{arg.key} must have a value")
         else:
-            references.append(Reference(access=Access.WRITE, text=arg.value))
+            references.append(Reference(access=Access.WRITE, text=arg.value, expansions=arg.expansions))
 
     for arg in invocation.positionals:
         if arg.value and arg.value not in ("!", "(", ")"):
-            references.append(Reference(access=Access.READ, text=arg.value))
+            references.append(Reference(access=Access.READ, text=arg.value, expansions=arg.expansions))
 
     return check_access(command, references, context)

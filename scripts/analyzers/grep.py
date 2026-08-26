@@ -16,12 +16,12 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     positionals = invocation.positionals if invocation.has_arg("regexp") else invocation.positionals[1:]
     for arg in positionals:
         if arg.value is not None:
-            references.append(Reference(access=Access.READ, text=arg.value))
+            references.append(Reference(access=Access.READ, text=arg.value, expansions=arg.expansions))
 
     for arg in invocation.get_opts(name="file"):
         if arg.value is None:
             raise ParseError(f"{arg.key} must have a value")
         else:
-            references.append(Reference(access=Access.READ, text=arg.value))
+            references.append(Reference(access=Access.READ, text=arg.value, expansions=arg.expansions))
 
     return check_access(command, references, context)

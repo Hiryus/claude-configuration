@@ -230,12 +230,15 @@ def parse_copy_ref(invocation:Invocation) -> list[Reference]:
     `cp SOURCE DESTINATION`, either side being a container path (`service:/app`) that is not checked.
     """
     references = []
-    operands = [x.value for x in invocation.positionals if x.value is not None]
+    operands = [x for x in invocation.positionals if x.value is not None]
     for index, operand in enumerate(operands[:2]):
-        parts = split_mount(operand)
+        access = Access.READ if index == 0 else Access.WRITE
+        if (reference := Reference(access=access, text=operand.value or "", expansions=operand.expansions)).dynamic:
+            references.append(reference)  # an expansion may hold either side of the copy
+            continue
+        parts = split_mount(operand.value or "")
         if len(parts) > 1 and not is_path(parts[0]):
             continue  # container side: inside the sandbox
-        access = Access.READ if index == 0 else Access.WRITE
         references.append(Reference(access=access, text=parts[0]))
     return references
 
@@ -244,11 +247,19 @@ def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
     """
     The host paths a container mounts, plus the named volumes that cannot be resolved: those are not the project directory, so they need validation.
     The volumes from other containers (`--volumes-from`) are allowed.
+
+    A spec built from an expansion is referenced whole, before any splitting: `-v $SPEC` has no
+    separator for `split_mount` to find and `--mount $SPEC` no `source=` field, so the structural
+    short-circuits below would otherwise read "nothing of the host is exposed" out of an unknown path.
     """
     references:list[Reference] = []
     unverified:list[str] = []
 
-    for spec in invocation.values("volume"):
+    for arg in invocation.values("volume"):
+        spec = arg.value or ""
+        if (reference := Reference(access=Access.WRITE, text=spec, expansions=arg.expansions)).dynamic:
+            references.append(reference)
+            continue
         parts = split_mount(spec)
         if len(parts) == 1:
             continue  # anonymous volume (`-v /data`): container side only
@@ -258,7 +269,11 @@ def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
             access = Access.READ if "ro" in parts[2:] else Access.WRITE
             references.append(Reference(access=access, text=parts[0]))
 
-    for spec in invocation.values("mount"):
+    for arg in invocation.values("mount"):
+        spec = arg.value or ""
+        if (reference := Reference(access=Access.WRITE, text=spec, expansions=arg.expansions)).dynamic:
+            references.append(reference)
+            continue
         fields = split_fields(spec)
         source = fields.get("source") or fields.get("src")
         if source is None or fields.get("type") == "tmpfs":
@@ -273,19 +288,24 @@ def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
     return (references, unverified)
 
 
-def parse_opt_paths(invocation:Invocation, names:list[str]) -> list[str]:
+def parse_opt_refs(invocation:Invocation, names:list[str], access:Access) -> list[Reference]:
     """
     The local paths an option points at. A plain value is a path (`-f Dockerfile`); a structured one
     only yields its path-looking fields, so `--cache-to type=registry,ref=x` references no file while
     `--cache-to type=local,dest=./cache` does.
+
+    A value built from an expansion is referenced whole: the field the expansion landed in is unknown,
+    and its text would not look like a path anyway (`--output dest=$X`).
     """
-    paths = []
-    for value in invocation.values(*names):
-        if "=" not in value:
-            paths.append(value)
+    references = []
+    for arg in invocation.values(*names):
+        value = arg.value or ""
+        reference = Reference(access=access, text=value, expansions=arg.expansions)
+        if reference.dynamic or "=" not in value:
+            references.append(reference)
         else:
-            paths.extend(x for x in split_fields(value).values() if is_path(x))
-    return paths
+            references.extend(Reference(access=access, text=x) for x in split_fields(value).values() if is_path(x))
+    return references
 
 
 # ============================================================================
@@ -304,20 +324,20 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     """
     invocation = docker.parse(command)
     reasons:list[str] = [] # reasons to ask are collected, not returned on the spot.
-    references = [Reference(access=Access.READ, text=x) for x in invocation.values("env-file")]
+    references = invocation.references(Access.READ, "env-file")
 
     if invocation.command in RUN_COMMANDS:
         invocation = strip_container_argv(invocation)
 
     if unsafe := [x.key for x in invocation.options if x.name in UNSAFE_FLAGS]:
         return (Decision.DENY, f"`{invocation.command}` uses the {unsafe} options: they may escape the container into the host.")
-    if any(x.partition(":")[0] in ROOT_USERS for x in invocation.values("user")):
+    if any((x.value or "").partition(":")[0] in ROOT_USERS for x in invocation.values("user")):
         return (Decision.DENY, "Do not run a container as root.")
     if invocation.has_arg(*DAEMON_FLAGS):
         reasons.append(f"`{invocation.command}` re-targets the client (daemon, config directory or TLS identity).")
 
     if "compose" in invocation.cmd_parts:
-        references += [Reference(access=Access.READ, text=x) for x in invocation.values("file")]
+        references += invocation.references(Access.READ, "file")
         if unsafe := [x.key for x in invocation.options if x.name in COMPOSE_UNSAFE_FLAGS]:
             reasons.append(f"`{invocation.command}` uses the {unsafe} global options, which are not allowed by default.")
 
@@ -339,10 +359,10 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
         references += mounts
 
     elif invocation.command in BUILD_COMMANDS:
-        references += [Reference(access=Access.READ, text=x) for x in parse_opt_paths(invocation, BUILD_READ_FLAGS)]
-        references += [Reference(access=Access.WRITE, text=x) for x in parse_opt_paths(invocation, BUILD_WRITE_FLAGS)]
+        references += parse_opt_refs(invocation, BUILD_READ_FLAGS, Access.READ)
+        references += parse_opt_refs(invocation, BUILD_WRITE_FLAGS, Access.WRITE)
         # The operand is the build context: a local directory (in rare cases it may be a repository/URL, but we want to validate this too).
-        references += [Reference(access=Access.READ, text=x.value) for x in invocation.positionals if x.value is not None]
+        references += [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]
         if disallowed := [x.key for x in invocation.options if x.name not in BUILD_ALLOWED_FLAGS]:
             reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
 
@@ -353,12 +373,12 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
 
     elif invocation.command == "docker volume create":
         # A bind-mounted volume carries its host path in `--opt device=/path`.
-        references += [Reference(access=Access.WRITE, text=x) for x in parse_opt_paths(invocation, ["opt"])]
+        references += parse_opt_refs(invocation, ["opt"], Access.WRITE)
         if invocation.unknown:
             reasons += [f"`{invocation.command}` uses the {invocation.unknown} options, which are not in the grammar; cannot verify them."]
 
     elif invocation.command in ALLOWED_COMMANDS:
-        references += [Reference(access=Access.WRITE, text=x) for x in invocation.values("output")]
+        references += invocation.references(Access.WRITE, "output")
         if invocation.unknown:
             reasons += [f"`{invocation.command}` uses the {invocation.unknown} options, which are not in the grammar; cannot verify them."]
 

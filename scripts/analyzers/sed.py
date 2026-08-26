@@ -20,9 +20,9 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     if invocation.unknown:
         return (Decision.ASK, f"`{command.base}` script is too complex; cannot verify it's read-only.")
 
-    operands = [x.value for x in invocation.positionals if x.value is not None]
-    if not operands or not SIMPLE_SCRIPT_RE.match(operands[0]):
+    operands = [x for x in invocation.positionals if x.value is not None]
+    if not operands or not SIMPLE_SCRIPT_RE.match(operands[0].value or ""):
         return (Decision.ASK, f"`{command.base}` script is too complex; cannot verify it's read-only.")
 
-    references = [Reference(access=Access.READ, text=x) for x in operands[1:]]
+    references = [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in operands[1:] if x.value is not None]
     return check_access(command, references, context)
