@@ -13,10 +13,9 @@ UNSAFE_FLAGS = ["cap-add", "device", "privileged", "security-opt"]
 # Base options re-targeting the client: another daemon, another config directory, another TLS identity.
 DAEMON_FLAGS = ["config", "context", "host", "tls", "tlscacert", "tlscert", "tlskey", "tlsverify"]
 
-# Global compose options. `--project-directory` re-anchors every relative path of the
-# compose file (build contexts, volumes), and the others are simply not listed.
-COMPOSE_FLAGS = ["ansi", "env-file", "file", "parallel", "profile", "progress", "project-name"]
-COMPOSE_UNSAFE_FLAGS = ["all-resources", "compatibility", "dry-run", "project-directory"]
+# Global compose options.
+COMPOSE_ALLOWED_FLAGS = ["ansi", "dry-run", "env-file", "file", "parallel", "profile", "progress", "project-name"]
+COMPOSE_UNSAFE_FLAGS = ["all-resources", "compatibility", "project-directory"]
 
 # Commands allowed as-is. They only report a status or act on docker objects, never on the host filesystem.
 # Both spellings are listed since the grammar keeps them distinct (`docker ps` is its own node, not an alias of `docker container ls`).
@@ -127,6 +126,7 @@ RUN_ALLOWED_FLAGS = [
     "health-start-period",
     "health-timeout",
     "help",
+    "interactive",
     "name",
     "network",
     "network-alias",
@@ -331,7 +331,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
 
     elif invocation.command in RUN_COMMANDS:
         mounts, unverified = parse_mount_ref(invocation)
-        allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_FLAGS if "compose" in invocation.cmd_parts else [])
+        allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_ALLOWED_FLAGS if "compose" in invocation.cmd_parts else [])
         if disallowed := [x.key for x in invocation.options if x.name not in allowed]:
             reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
         if unverified:
@@ -374,8 +374,3 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     if any(reasons):
         return (Decision.ASK, " ".join(reasons))
     return (Decision.ALLOW, f"The `{invocation.command}` command is allowed.")
-
-
-
-
-

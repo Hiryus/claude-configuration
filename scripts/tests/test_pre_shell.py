@@ -977,6 +977,8 @@ def test_container_status_allowed(cmd):
 
 @pytest.mark.parametrize("cmd", [
     "docker compose up -d",
+    "docker compose --dry-run up",  # rule 3.1: a simulated command can never do more than the bare one
+    "docker compose up --dry-run",
     "docker compose create",
     "docker compose down",
     "docker compose restart web",
@@ -1066,10 +1068,19 @@ def test_escape_option_hidden_behind_an_unknown_option_still_denied():
     "docker create --name web nginx",
     "docker compose run --rm web",
     "docker compose exec web ls",
+    "docker run --rm -i alpine",
+    "docker exec -i web ls",
+    "docker compose run --dry-run web",  # rule 3.1: the verbs inherit the global options
+    "docker compose --dry-run run web",
 ])
 def test_container_run_allowed(cmd):
     # Edit mode: a read-write bind mount is a write, gated by §1.4 in manual mode.
     assert run(command=cmd, mode="acceptEdits") == "allow"
+
+def test_only_the_tty_flag_gates_the_interactive_cluster():
+    # `-i` is on the §3.3 list, `-t` is not: only the latter is named in the reason.
+    assert "'-t'" in reason(command="docker run --rm -it alpine")
+    assert "'-i'" not in reason(command="docker run --rm -it alpine")
 
 def test_container_argv_path_is_not_checked():
     # Everything after the image runs *inside* the sandbox: it is not a host path.
@@ -1111,7 +1122,7 @@ def test_negative_value_before_the_operand_keeps_the_strip():
     "docker run --rm -v /etc:/etc alpine",
     "docker run --rm --mount type=bind,source=/etc,target=/etc alpine",
     "docker run --rm --mount type=BIND,source=/etc,target=/etc alpine",
-    "docker run --rm -it alpine",
+    "docker run --rm -it alpine",  # `-i` is allowed, `-t`/`--tty` is not: the cluster still asks
     "docker run --rm --cgroup-parent /x alpine",
     "docker run --rm -v $(pwd):/app alpine",
     "docker create -v /etc:/etc nginx",
