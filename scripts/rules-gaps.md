@@ -4,6 +4,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 **Loosening the sandbox** (the rest are stricter than the rule, or wrong in a harmless direction):
 - **2.13/3.x** (#28) — `podman` is unknown, so `podman run --privileged` asks instead of denying.
+- **2.8** (#38) — a path glued to a short flag (`file -f.env`, `grep -f.env pat`) is neither consumed as a value nor left in the operands, so it is never checked at all.
 
 
 ## Modes
@@ -51,8 +52,18 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
         Closed by fixing the rule, not the code: `cut` and `uniq` take their files as positional operands (no flag involved), and both `sort -o FILE` and `uniq INPUT OUTPUT` write a file, so neither of those two is read-only.
 11. [x] Rule: a simple `$VAR`/`${VAR}` substitution is allowed as an argument to these commands. Current: `echo $HOME` is allowed - these commands reference no file, so nothing is ever checked.
         Never a real gap: closed by observation, not by a code change. The opposite problem is real, cf. #36.
-37. [ ] Rule: only the files these commands read are path-checked. Current: they are parsed with an empty flag table, so no flag consumes its value and every flag value lands in the positionals, i.e. is read as a file.
+37. [x] Rule: only the files these commands read are path-checked. Current: they are parsed with an empty flag table, so no flag consumes its value and every flag value lands in the positionals, i.e. is read as a file.
         Harmless until #36, which made it visible: a flag value holding an expansion now asks (`head -n $N file`, `jq --arg k "$VAL" . file.json`, `cut -d $D -f1 file`). Over-strict, same shape as the #21 amplification. Fixing it means giving each of these binaries the few flags that take a value.
+        Closed with one grammar per binary (`parsers/readonly.py`) and its analyzer (`analyzers/readonly.py`), on the `grep` model. Only the *value-taking* flags are tabled: an untabled flag is already recorded as unknown-with-no-value, which is what a boolean needs.
+        Each tabled flag is sorted into one of three buckets, because consuming a path without referencing it would be a *loosening*: `option` (a count, a delimiter, a pattern -- eaten and forgotten), `input-file` (a **read**: `diff --from-file`, `file -f`/`-m`, `wc --files0-from`, `jq -f`/`--slurpfile`/`--rawfile`, `less -k`/`-T`) and `output-file` (a **write**: `less -o`/`-O`, which now follows the write rules instead of passing as a read).
+        Two traps, both of them loosenings if missed: an optional-value flag must stay `value_required=False` or it swallows the next word (`ls --color .env`, `tail --follow .env`, `diff --unified` -- unlike `diff -U`, whose short spelling does require its count); and `test` keeps an **empty** table on purpose, since its "flags" are unary operators whose operand *is* the file (`test -f .env`).
+        `Flag` gained a `value_count` (default 1) for the flags that eat two words (`jq --arg NAME VALUE`): the value kept is the last word -- the one that may be a path, cf. `--slurpfile NAME FILE` -- and the expansions of every word swallowed, so none of them escapes the dynamic check of #36.
+        Fixed along the way, same family but reached through the operands: `jq`'s first operand is its filter program, not a file, so `jq '.items[]' data.json` no longer asks on the glob characters of the filter (skipped unless `-f`/`--from-file` already supplied the program, exactly like `grep -e`). Visible side effect: a lone operand is now always the filter, so `jq .env` allows instead of denying -- correct, since jq reads stdin there and touches no file, exactly like `grep .env`.
+        Left over-strict: `jq --args`/`--jsonargs` turn the trailing operands into strings, and `cmp FILE1 FILE2 SKIP1 SKIP2` ends on two byte offsets -- both are still path-checked as operands. `file -m` takes a colon-separated *list* of magic files, referenced as a single path text (unchanged verdict: an **ask** either way).
+        One hole found while closing it, older and wider than §2.8, hence its own entry: #38.
+38. [ ] Rule: every path a read-only binary names is checked. Current: only the `--flag value` and `--flag=value` spellings are; a path glued to a short flag (`file -f.env`, `diff -X.env`, `jq -f.env`, `less -k.env`/`-o.env`, `grep -f.env pat`) is neither consumed as a value nor left in the operands, so nothing is checked at all.
+        Same root cause as the docker `-u0` of #29: `parse_glued_args` splits a cluster letter by letter and bails as soon as one is not a tabled flag, and `parse_flag` only matches a short flag as a whole token, so `-f.env` ends up an unknown flag that consumes nothing.
+        Pre-existing (the empty flag table behaved the same), and it spans `grep`, `docker` and `find` (`-O2`) alike, so fixing it belongs in `parse_flag` -- a prefix match against the tabled value-taking flags, taking the remainder as the glued value -- not in any single binary's grammar.
 
 
 ## 2.9.1 Git directory

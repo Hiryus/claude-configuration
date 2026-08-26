@@ -7,7 +7,7 @@ Personal configuration and scripts for claude code.
 ├─ agents/                   - the agents definitions
 ├─ skills/                   - the kills definitions (commands are deprecated and now defiend as skills)
 └─ scripts/                  - the agents definitions
-   ├─ analyzers/             - the per-binary policy checks (docker, find, git, grep, sed)
+   ├─ analyzers/             - the per-binary policy checks (docker, find, git, grep, readonly, sed)
    ├─ models/                - the models shared by all the scripts
    ├─ parsers/               - the bash lexing and per-binary argument grammars
    ├─ utils/                 - the pure helpers (filesystem paths, message formatting)

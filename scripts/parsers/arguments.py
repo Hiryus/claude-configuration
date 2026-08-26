@@ -54,7 +54,7 @@ def parse_flag(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> l
 
     # Known flag (as a whole token), consume value if any
     if flag := next((x for x in potential_flags if key in x.keys), None):
-        value = parse_value(key=key, token=token, tokens=tokens, value_required=flag.value_required)
+        value = parse_value(key=key, token=token, tokens=tokens, value_required=flag.value_required, value_count=flag.value_count)
         return [build_argument(key=key, name=flag.name, token=token, value=value)]
 
     # Not a known flag as a whole token.
@@ -95,24 +95,29 @@ def parse_glued_args(token:Token, tokens:list[Token], potential_flags:list[Flag]
         if i != last_index:
             results.append(Argument(key=flag.keys[0], name=flag.name, value=None, expansions=token.expansions))
         else:
-            value = parse_value(key=flag.name, token=token, tokens=tokens, value_required=flag.value_required)
+            value = parse_value(key=flag.name, token=token, tokens=tokens, value_required=flag.value_required, value_count=flag.value_count)
             results.append(build_argument(key=flag.keys[0], name=flag.name, token=token, value=value))
 
     return results
 
 
-def parse_value(key:str, token:Token, tokens:list[Token], value_required:bool) -> Token | None:
+def parse_value(key:str, token:Token, tokens:list[Token], value_required:bool, value_count:int = 1) -> Token | None:
     """
-    The value of a flag, either glued behind an `=` or taken from the next word.
+    The value of a flag, either glued behind an `=` or taken from the next word(s).
     It stays a `Token` so a `--file $VAR` value keeps the expansions of the word it came from: they
     belong to the value, not to the flag, and the path check reads them off the resulting `Argument`.
+
+    A flag eating several words (`jq --arg NAME VALUE`) keeps the last one as its value -- that is the
+    one that may be a path (`jq --slurpfile NAME FILE`) -- and the expansions of all of them, so none
+    of the words it swallowed escapes the dynamic check.
     """
     if "=" in token.text:
         return Token(text=token.text.partition("=")[2], expansions=token.expansions)
     elif value_required:
-        if len(tokens) == 0:
-            raise ParseError(f"flag {key} requires a value, but none was provided")
-        return tokens.pop(0)
+        if len(tokens) < value_count:
+            raise ParseError(f"flag {key} requires {value_count} value(s), but only {len(tokens)} were provided")
+        consumed = [tokens.pop(0) for _ in range(value_count)]
+        return Token(text=consumed[-1].text, expansions=frozenset(x for word in consumed for x in word.expansions))
     else:
         return None
 

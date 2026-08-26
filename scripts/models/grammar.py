@@ -12,7 +12,8 @@ class Flag:
     """
     name:str                  # canonical, joins to policy: "message", "output", "only"
     keys:list[str]            # every spelling: ("-m", "--message")
-    value_required:bool
+    value_count:int = 1       # words the flag eats (`jq --arg NAME VALUE` takes two)
+    value_required:bool = False
 
 @dataclass(frozen=True)
 class CommandSyntax:
