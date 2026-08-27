@@ -1,7 +1,8 @@
 """
-Formatter called by claude to render the status bar with context size and usage.
+Formatter called by claude code to render the status bar with context size and usage.
 Reads the status-line JSON payload from stdin and prints one line of colored text.
 """
+
 import json
 import sys
 from dataclasses import dataclass
