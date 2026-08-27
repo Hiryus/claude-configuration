@@ -3,19 +3,21 @@ Personal configuration and scripts for claude code.
 ## File structure
 
 ```
-├─ setings.json              - the claude code central configuration
 ├─ agents/                   - the agents definitions
 ├─ skills/                   - the kills definitions (commands are deprecated and now defiend as skills)
-└─ scripts/                  - the agents definitions
-   ├─ analyzers/             - the per-binary policy checks (docker, find, git, grep, readonly, sed)
-   ├─ models/                - the models shared by all the scripts
-   ├─ parsers/               - the bash lexing and per-binary argument grammars
-   ├─ utils/                 - the pure helpers (filesystem paths, message formatting)
-   ├─ generic.py             - the command-agnostic policy (file rules, access checks) and the hook response
-   ├─ pre_file_access.py     - a script to control and secure files access from the Read/Edit/Write tools
-   ├─ pre_shell.py           - a (too) complex script to control and secure bash calls
-   ├─ statusline_command.py  - a script rendering the status bar in claude code
-   └─ rules.md               - the validation rules specifications
+├─ scripts/                  - the agents definitions
+|  ├─ analyzers/             - the per-binary policy checks (docker, find, git, grep, readonly, sed)
+|  ├─ models/                - the models shared by all the scripts
+|  ├─ parsers/               - the bash lexing and per-binary argument grammars
+|  ├─ templates/             - the message templates used by the various hooks
+|  ├─ utils/                 - the pure helpers (filesystem paths, message formatting)
+|  ├─ generic.py             - the command-agnostic policy (file rules, access checks) and the hook response
+|  ├─ pre_file_access.py     - the hook to control and secure files access from the Read/Edit/Write tools
+|  ├─ pre_shell.py           - the hook to control and secure bash calls
+|  ├─ post_markdown.py       - the hook to post-process markdown table
+|  └─ statusline_command.py  - the script rendering the status bar in claude code
+├─ SECURITY.md               - the security rules specifications
+└─ setings.json              - the claude code central configuration
 ```
 
 ## Requirements

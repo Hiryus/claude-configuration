@@ -1,3 +1,7 @@
+"""
+Hook pre-processing `Bash` calls to enforce the security rules.
+"""
+
 import json
 import os
 import re

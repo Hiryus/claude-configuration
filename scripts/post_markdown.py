@@ -1,3 +1,7 @@
+"""
+Hook post-processing markdown files to align table columns.
+"""
+
 import json
 import sys
 from pathlib import Path

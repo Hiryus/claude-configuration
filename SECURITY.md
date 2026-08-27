@@ -1,17 +1,56 @@
-This file describes the rules we want to implement to control the tool calls.
-- If two rules contradict each other, **specific** rules take precedence over **generic** ones, then **deny** rules take precedence over the others.
-- Any behavior not listed falls back to `ask` (`deny` in **auto mode**).
+This file describes the rules implemented to secure the agent's tool calls, especially the `Edit`, `Read`, `Write`, and `Bash` ones.
 
 
-## Modes
+## Threat model
+
+The threat model only recognizes the computer where the agent is executed as **trusted**.
+Every other machine and the local network are considered **untrusted**, including especially the inference servers of most commercial models.
+
+Different threats are identified:
+1. The **data leakage** of sensitive information read by tool calls from the local machine and sent to the LLM servers.
+   - While we try to **mitigate** this risk, it is recognized - and accepted - that some data located inside the project directory may leak.
+   - It is however deemed **unacceptable** that the LLM accesses sesitive data _outside_ the project directory.
+   - Information accessible on the (local) network and without authentication is not considered sensitive.
+2. The **corruption** of the system or **destruction** of data inside the computer where the agent is executed, be it due to an error of the LLM or a willing sabotage act originating from the LLM servers (be it by the legitimate owners or intruders).
+   - While we try to **mitigate** this risk, it is recognized - and accepted - that the project directory may be corrupted or destroyed.
+   - It is however expected that the project files are versionned using `git` and commited data would not be lost without recovery.
+   - It is also deemed **unacceptable** to damage the computer system or hosted data outside the project directory.
+3. The **corruption** of the system or **destruction** of data over the network due to network calls made by the agent.
+   - The threat model assumes a **zero-trust** network where data and services are protectd behind strong authentication and authorization.
+   - Thus, since authentication secrets are protected by rule #1, and projects should never disclose production credentials, no restriction is put to control, nor restrict, the agent network capability.
+
+
+## Philosophy
+
+The following macro rules are defined to control the agent capabilities:
+- Only the tool calls that can be statically analyzed and guaranteed "safe" are allowed.
+- Every other call must be executed in a strong sandbox (where only the project directory can be mounted).
+- The agent is only allowed to access files in the project directory or a set of files deemed as "safe".
+  * When possible, files containing secrets are forbidden.
+  * Accesses that are not allowed must either be validated by the user, or rejected alltogether.
+
+A call is declared "safe" if:
+- It only reads or writes data in the allowed folders (readable and writable folders being two different sets).
+- It does not modify the host system (no installation, configuration change, etc.).
+- It does not modify the git history of the current brach (nor any other branch) .
+
+### Modes
 
 Every call runs in exactly one mode, derived from the harness permission mode:
-- In **manual** mode, only reads are automatically **allowed** based on the [File rules](#1-file-rules).
+- In **manual** mode, only reads are automatically **allowed** based on the [file rules](#1-file-rules).
   This mode corresponds to the `default` and `plan` permission modes from claude code.
-- In **edit** mode, reads and writes are automatically **allowed** based on the [File rules](#1-file-rules).
+- In **edit** mode, reads and writes are automatically **allowed** based on the [file rules](#1-file-rules).
   This mode corresponds to the `acceptEdits` permission mode from claude code.
 - The **auto** mode **allows** the same calls as the **edit** mode, but also transforms any **ask** into a **deny**, effectively forbidding interractive validations.
   This mode corresponds to any permission mode from claude code that does not already fall into the other two modes.
+
+### Conflicts resolution:
+
+Any behavior not listed falls back to `ask` (or `deny` in **auto mode**).
+
+If two rules contradict each other, **specific** rules take precedence over **generic** ones.
+Then **deny** rules take precedence over the others.
+Then **ask** rules take precedence over **allow** ones.
 
 
 ## 1. File rules
@@ -88,13 +127,13 @@ The hook makes no attempt to guess or track the target directory. It only define
 
 Moving outside the project is **allowed**: the move itself discloses little, and every later access is still checked against the unchanged project directory.
 
-Redirects still follow the [File rules](#1-file-rules) (ex: `cd /tmp > .env` is **denied**).
+Redirects still follow the [file rules](#1-file-rules) (ex: `cd /tmp > .env` is **denied**).
 
 **Reason**: Knowing the current working directory is required to validate file access in case of relative path.
 Simulating the shell's moves is both complex and unreliable (symlink canonicalization, subshell isolation, `$OLDPWD`, targets directory deleted or unaccessible...).
 Trusting the payload and keeping the `cd` alone gives the same guarantee for a fraction of the code.
 
-NB: The current directory and the project directory are two different things: the first anchors relative paths and follows the agent's `cd` calls, the second is the perimeter of the [File rules](#1-file-rules) and never moves.
+NB: The current directory and the project directory are two different things: the first anchors relative paths and follows the agent's `cd` calls, the second is the perimeter of the [file rules](#1-file-rules) and never moves.
 
 ### 2.4. Variable assignment
 
@@ -104,14 +143,14 @@ Bare variable assignments (`FOO=bar`) are **allowed**.
 
 ### 2.5. Filesystem access
 
-All files accessed follow the [File rules](#1-file-rules), including:
+All files accessed follow the [file rules](#1-file-rules), including:
 - Files defined as input or output by the binary options (ex: `--output <path>`),
 - `>`, `>>`, `>|`, `&>`, `&>>` redirects counting as _write_ operations,
 - `<`, `<>`, `<<<` redirects counting as _read_ operations,
 - fd-dups like `2>&1` and `/dev/null` are ignored.
 
 A path that looks like a glob pattern (`*`, `?`, `[`, `{`, `(`) is expanded against the real filesystem.
-Each match is checked with the [File rules](#1-file-rules).
+Each match is checked with the [file rules](#1-file-rules).
 
 If a path is built from a substitution or expansion (`$(...)`, `` `...` ``, `$VAR`, arithmetic, ...), it is "dynamic" and results in an **ask**, since its real target can't be verified statically.
 - One exception: a leading `~` is expanded to the user home.
@@ -120,7 +159,7 @@ If a path is built from a substitution or expansion (`$(...)`, `` `...` ``, `$VA
 
 The overall decision is the worst decision across all matched files (**deny** > **ask** > **allow**).
 
-**Reason**: The agent could bypass the [File rules](#1-file-rules) with a bash command. Files accessed from the command line must be checked too.
+**Reason**: The agent could bypass the [file rules](#1-file-rules) with a bash command. Files accessed from the command line must be checked too.
 
 NB: The files rules are not bullet-proof since a rogue agent could still write and execute python code, for example, to read a secret.
 But it nudges it in the right direction and avoids copying the secret in clear text in the LLM messages.
@@ -140,20 +179,17 @@ The `gh` command is **denied** in favor of the github MCP.
 
 **Reason**: This rule is not a security constraint, but more a way to force the agent to respect our standard tools.
 
-### 2.8. Read-only binaries
+### 2.8. Read binaries
 
 The `echo`, `printf`, `pwd`, `sleep`, and `tr` binaries are **allowed**.
-Simple variable substitutions (`$VAR` or `${VAR}`) are **allowed** as argument to these commands.
+- Simple variable substitutions (`$VAR` or `${VAR}`) are **allowed** as argument to these commands.
 
-**Reason:** They only print or format information and do not access any file.
+The `cat`, `cmp`, `cut`, `diff`, `file`, `head`, `jq`, `less`, `ls`, `more`, `tail`, `test`, and `wc` binaries are allowed too if they respect the [file rules](#1-file-rules).
+- For the `grep` binary, positional arguments are treated as _read_ accesses, minus the search pattern itself.
+- The `-f`/`--file` argument value is a _read_ access too.
 
-For the `cat`, `cmp`, `cut`, `diff`, `file`, `head`, `jq`, `less`, `ls`, `more`, `tail`, `test`, and `wc` binaries, the [File rules](#1-file-rules) apply.
-
-For the `grep` binary, positional arguments are treated as _read_ accesses, minus the search pattern itself.
-The `-f`/`--file` argument value is a _read_ access too.
-The [File rules](#1-file-rules) apply to both.
-
-**Reason:** These commands are similar to a `Read` tool call.
+**Reason:** These commands are widely used and blocking them would impede the agent speed/capabilities.
+Since they mostly print or format information and are relatively easy to parse, they are deemed safe enough to run on the host.
 
 
 ### 2.9. Specific git rules
@@ -184,23 +220,21 @@ Additionally, for defence in depth, the commands that rewrite history are forbid
 
 #### 2.9.3. Configuration
 
-Reading git configuration (via the `git config`) is **allowed**.
+Reading the git configuration (via `git config`) is **allowed**.
 
 Writing git configuration (via the same option or `git -c`) is **ask**.
 
-**Reason**: Reading git configuration is useful for the agent, but modifying it must never happen without the user's consent.
+**Reason**: Reading git configuration is useful for the agent, but modifying it must never happen without the user's consent to maintain system integrity and history safety. Since the user may also run git commands, it is important he/she is aware of the configuration at all times and is not surprised by a change.
 
-NB: Writing the git configuration files directly is forbidden by the [File rules](#1-file-rules).
+NB: Writing the git configuration files directly is forbidden by the [file rules](#1-file-rules).
 
 #### 2.9.4. Usual commands
 
-The `git add`, `git checkout`, and `git switch` commands are **allowed**.
+The `git add`, `git checkout`, `git mv` `git rm`, and `git switch` commands are **allowed** as long as they respect the the [file rules](#1-file-rules).
 
-The `git commit` command is **allowed**, except when the `--only`/`-o` option is supplied, in which case the [File rules](#1-file-rules) apply.
+The `git commit` command is **allowed**, except when the `--only`/`-o` option is supplied, in which case the [file rules](#1-file-rules) apply.
 
-The `git reset` command is **allowed** as long as the option `--hard` is not used.
-
-For the `git mv` and `git rm` commands, the [File rules](#1-file-rules) apply.
+The `git reset` command is **allowed** as long as the option `--hard` is not used and it respect the the [file rules](#1-file-rules).
 
 **Reason**: The agent is allowed to update the project, and it is actually its main objective.
 These commands can update the files, but the history will always keep the previous contents (assuming they were committed).
@@ -213,53 +247,31 @@ The following commands are **allowed**:
 - `git check-ignore`, `git diff`, `git grep`, `git log`, `git ls-files`, `git ls-tree`, `git rev-parse`, `git show`, `git status`.
 
 **Reason**: Most of these commands are used very often and pose no threat to the system.
-Deleting or modifying a branch or a remote is **ask**.
 
-### 2.10. Specific find rules
+NB: deleting or modifying a branch or a remote is **ask**.
+
+### 2.10. Specific docker/podman rules
+
+See [Containers rules](#3-containers-rules).
+
+### 2.11. Specific find rules
 
 The `-delete`, `-exec`, `-execdir`, `-fls`, `-fprint`, `-fprint0`, `-fprintf`, `-ok`, and `-okdir` options are **denied** with the `find` command.
 
-Otherwise, the leading search-root arguments are checked against the [File rules](#1-file-rules).
+Otherwise, the leading search-root arguments are checked against the [file rules](#1-file-rules).
 
 **Reason:** Find is a standard tool to search files, but it can also execute arbitrary code or change the filesystem with specific options.
 The objective is to limit its capabilities to only read files in the authorized perimeter.
 
-### 2.11. Specific node rules
-
-The `node --version`/`node -v` commands are **allowed**.
-
-The `node --check <file>` command is checked against the [File rules](#1-file-rules).
-
-Any other `node` usage is **ask**.
-
-**Reason:** The `node` command is mostly used to execute javascript code, which should obviously be denied by default.
-However, it is also often used by an agent to check if node exists. This is fine and can become annoying for the user to validate every time.
-Allowing the agent to format/lint a file in its perimeter is also a good idea.
-
-### 2.12. Specific npm rules
-
-The following read-only commands are always **allowed**:
-- `npm --version` / `npm -v`,
-- `npm ls`, `npm outdated`, `npm view`,
-- `npm audit` without the `fix` subcommand.
-
-In **edit mode**, `npm prune` is also **allowed**.
-
-**Reason:** The `npm` command can be very powerful (or dangerous). But it is also used regularly for good automation (including security audits).
-The aim, here, is to allow usual _and_ safe commands.
-
-### 2.13. Specific docker/podman rules
-
-See [Containers rules](#3-containers-rules).
-
-### 2.14. Specific sed rules
+### 2.12. Specific sed rules
 
 The `sed` command is **allowed** with a subset of options: `-n`/`--quiet`/`--silent`.
 
-**Reason:** The `sed` command is mostly used to either read or modify sections of a text, but it has also very powerful options (including code execution). Thus it cannot be allowed globally.
-- The aim is to allow simple read operations without coding a complex parser.
-- In the future, we may also allow to update a string or a file in **edit mode**.
-- Any other option is deemed "too complex to verify" and triggers an **ask**.
+Updating a file must respect the [file rules](#1-file-rules).
+
+**Reason:** The `sed` command is mostly used to either read or modify sections of a text, but it has also very powerful options (including code execution). Thus it cannot be allowed globally. The aim is to allow simple operations without coding a complex parser.
+
+NB: any other option is deemed "too complex to verify" and triggers an **ask**.
 
 ## 3. Containers rules
 
@@ -277,8 +289,8 @@ Thus, agents are requested to run commands in a container when they are not auto
 The following global `compose` options (`docker compose -f compose.yml up`) are **allowed**:
 `--ansi`,
 `--dry-run`,
-`--env-file` (path is subject to the [File rules](#1-file-rules)),
-`-f`/`--file` (path is subject to the [File rules](#1-file-rules)),
+`--env-file` (path is subject to the [file rules](#1-file-rules)),
+`-f`/`--file` (path is subject to the [file rules](#1-file-rules)),
 `--parallel`,
 `--profile`,
 `--progress`,
@@ -399,7 +411,7 @@ The `docker compose exec`, `docker compose run`, `docker container create`/`dock
 
 The `docker volume create` command is **allowed** as long as it only references the project directory.
 
-The `docker compose cp` and `docker container cp`/`docker cp` commands are **allowed** as long as they only reference files compatible with the [File rules](#1-file-rules).
+The `docker compose cp` and `docker container cp`/`docker cp` commands are **allowed** as long as they only reference files compatible with the [file rules](#1-file-rules).
 The container side of the copy (`service:/path`) is not checked: it is inside the sandbox.
 
 **Reason:** The aim here is to allow the agent to run any command in any _isolated_ container, allowing to bind only the project directory to ensure the untrusted command cannot change the host outside of the project files.
@@ -410,16 +422,16 @@ NB: everything after the container/service/image name is the container's own arg
 
 The `docker build` and `docker buildx` commands are **allowed**, as long as they only reference files inside the project, and with the following options (any other option is **ask**):
 - `--build-arg`,
-- `--build-context` (path is subject to the [File rules](#1-file-rules)),
-- `--cache-from` (path is subject to the [File rules](#1-file-rules)),
-- `--cache-to` (path is subject to the [File rules](#1-file-rules)),
-- `-f`/`--file` (path is subject to the [File rules](#1-file-rules)),
-- `--iidfile` (path is subject to the [File rules](#1-file-rules)),
+- `--build-context` (path is subject to the [file rules](#1-file-rules)),
+- `--cache-from` (path is subject to the [file rules](#1-file-rules)),
+- `--cache-to` (path is subject to the [file rules](#1-file-rules)),
+- `-f`/`--file` (path is subject to the [file rules](#1-file-rules)),
+- `--iidfile` (path is subject to the [file rules](#1-file-rules)),
 - `--label`,
-- `--metadata-file` (path is subject to the [File rules](#1-file-rules)),
+- `--metadata-file` (path is subject to the [file rules](#1-file-rules)),
 - `--no-cache`,
 - `--no-cache-filter`,
-- `-o`/`--output` (path is subject to the [File rules](#1-file-rules)),
+- `-o`/`--output` (path is subject to the [file rules](#1-file-rules)),
 - `--pull`,
 - `-q`/`--quiet`,
 - `--resource`,

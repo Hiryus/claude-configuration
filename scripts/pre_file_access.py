@@ -1,3 +1,7 @@
+"""
+Hook pre-processing file access (`Edit` | `Read` | `Write`) to enforce the security rules.
+"""
+
 import json
 import os
 import sys
