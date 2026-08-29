@@ -1216,9 +1216,9 @@ def test_container_argv_options_are_not_checked(cmd):
     assert run(command=cmd) == "allow"
 
 @pytest.mark.parametrize("cmd", [
-    "docker run --rm -v /home/hiryus/.claude:/app:ro -w /app php:cli php -v",  # the reported crash: opaque_tail flag needs a value it doesn't have
-    "docker exec web date -w",                                                # the `exec` node (`-w` is value_required there)
-    "docker compose run --rm web pytest -v",                                  # the `compose run` node
+    f"docker run --rm -v {Path.home() / '.claude'}:/app:ro -w /app php:cli php -v",  # the reported crash: opaque_tail flag needs a value it doesn't have
+    "docker exec web date -w",                                                       # the `exec` node (`-w` is value_required there)
+    "docker compose run --rm web pytest -v",                                         # the `compose run` node
 ])
 def test_opaque_tail_flag_needing_a_value_does_not_crash_the_parse(cmd):
     assert run(command=cmd) == "allow"
