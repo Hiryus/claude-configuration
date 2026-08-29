@@ -8,6 +8,7 @@ ALLOWED_SUBCOMMANDS = [
     "check-ignore",
     "commit",
     "diff",
+    "fetch",
     "grep",
     "log",
     "ls-files",
