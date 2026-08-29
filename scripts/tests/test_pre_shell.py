@@ -1215,6 +1215,20 @@ def test_container_argv_flags_are_not_checked():
 def test_container_argv_options_are_not_checked(cmd):
     assert run(command=cmd) == "allow"
 
+@pytest.mark.parametrize("cmd", [
+    "docker run --rm -v /home/hiryus/.claude:/app:ro -w /app php:cli php -v",  # the reported crash: opaque_tail flag needs a value it doesn't have
+    "docker exec web date -w",                                                # the `exec` node (`-w` is value_required there)
+    "docker compose run --rm web pytest -v",                                  # the `compose run` node
+])
+def test_opaque_tail_flag_needing_a_value_does_not_crash_the_parse(cmd):
+    assert run(command=cmd) == "allow"
+
+def test_opaque_tail_flag_needing_a_value_still_denies_with_an_untrusted_boundary():
+    # `-u0` is untabled, so the boundary is untrusted and the whole line stays under option parsing
+    # (see test_untabled_option_before_the_operand_disables_the_strip); the trailing `-v` -- which
+    # would raise on a trusted boundary -- is still caught, but only as an unknown, disallowed option.
+    assert run(command="docker run -u0 -v ./certs/server.key:/k alpine cmd -v") == "deny"
+
 def test_container_argv_does_not_hide_a_docker_option():
     # A space-separated value may not move the boundary: `always` is `--pull`'s, not the image.
     assert run(command="docker run --rm --pull always -v /etc:/etc alpine ls") == "ask"

@@ -129,6 +129,7 @@ class Invocation:
     """
     arguments:list[Argument]
     cmd_parts:list[str] # ex: ["git", "commit"], ["docker", "container", "ls"])
+    opaque_tail:bool = False
 
     @property
     def command(self) -> str:
