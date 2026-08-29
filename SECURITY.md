@@ -379,7 +379,7 @@ The following commands are **allowed** (as long as they don't use one of the abo
 
 **Reason:** These commands can modify containers, images, and other docker objects, but will not corrupt the host system. Some of them are also widely and regularly used in a normal development lifecycle.
 
-The `docker compose exec`, `docker compose run`, `docker container create`/`docker create`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only the project directory and volumes from other containers can be mounted as a volume (`--volume`/`-v`, `--mount`, `--volumes-from` options) and only with the following options (any other option - except the ones denied above - is **ask**):
+The `docker compose exec`, `docker compose run`, `docker container create`/`docker create`, `docker container exec`/`docker exec`, `docker container run`/`docker run` commands are **allowed** but only with the following options (any other option - except the ones denied above - is **ask**):
 - `-d`/`--detach`,
 - `--dry-run` (compose only, cf. §3.1),
 - `--entrypoint`,
@@ -408,6 +408,11 @@ The `docker compose exec`, `docker compose run`, `docker container create`/`dock
 - `--stop-timeout`,
 - `--tmpfs`,
 - `-w`/`--workdir`.
+
+Volumes can also be mounted with `--volume`/`-v`, `--mount`, and `--volumes-from` options as long as the volume validates the [file rules](#1-file-rules).
+- This includes the project directory and temporary files (`/tmp`) in read and write modes.
+- Directories allowed only in read must be mounted with a read-only option.
+- Volumes from other containers can also be mounted in read-only.
 
 The `docker volume create` command is **allowed** as long as it only references the project directory.
 
