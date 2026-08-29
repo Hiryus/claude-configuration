@@ -98,11 +98,6 @@ class CommandLine:
             return ""
         return os.path.basename(self.program.text).lower().removesuffix(".exe")
 
-    @property
-    def subcommand(self) -> str | None:
-        subcommand = next((arg.text for arg in self.args if not arg.text.startswith("-")), None)
-        return subcommand.lower() if subcommand else None
-
 # ============================================================================
 # Higher level commands (Invocations) and their arguments
 # ============================================================================
