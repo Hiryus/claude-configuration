@@ -16,25 +16,6 @@ Baseline checks run before this update:
 Findings already tracked in `tmp/rules-gaps.md` are omitted, same as before.
 
 
-### 2. `jq --slurpfile=NAME FILE` still skips the file check
-
-Unchanged: `scripts/parsers/arguments.py:123-124`, the `=` branch of `parse_value`, still ignores
-`value_count` and returns after consuming nothing further, so `--slurpfile=a .env` leaves `.env` as
-operand #0, which `analyzers/readonly.py:14-20` then drops as jq's filter program.
-
-```
-deny  | jq --slurpfile a .env . d.json           <- correct
-allow | jq --slurpfile=a .env . d.json           <- .env never checked
-```
-
-Worth noting: `4799e90` added a sibling check two lines below the value-count read, in the
-`elif value_required:` branch (`parsers/arguments.py:130-131`) — a `flag-shaped word` raises
-`ParseError` instead of being silently swallowed as a value. That's the same defensive shape the
-`=` branch still lacks; the suggested fix (raise `ParseError` in the `=` branch when
-`value_count > 1`) now has direct precedent in the same function, written by the same commit that
-otherwise left this branch alone.
-
-
 ### 3. `file -C -m PATH` still writes a file classified as a read
 
 Unchanged: `scripts/parsers/readonly.py:50` still tables `-m`/`--magic-file` as `input-file`. `file -C

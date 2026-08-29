@@ -121,6 +121,8 @@ def parse_value(key:str, token:Token, tokens:list[Token], value_required:bool, v
     of the words it swallowed escapes the dynamic check.
     """
     if "=" in token.text:
+        if value_count > 1:
+            raise ParseError(f"flag {key} requires {value_count} value(s), which `=` cannot carry (use `{key} NAME VALUE`)")
         return Token(text=token.text.partition("=")[2], expansions=token.expansions)
     elif value_required:
         if len(tokens) < value_count:

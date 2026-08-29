@@ -193,6 +193,12 @@ def test_readonly_log_file_write_asks_in_manual_mode():
 def test_readonly_multi_value_flag_missing_its_values_denied():
     assert run(command="jq --arg k") == "deny"
 
+@pytest.mark.parametrize("cmd", ["jq --slurpfile=a .env . d.json", "jq --rawfile=a .env . d.json"])
+def test_readonly_multi_value_flag_via_equals_denied(cmd):
+    # `=` can only glue one word; a two-value flag given this way used to leave its real
+    # value as a bare operand (e.g. .env dropped as jq's filter program, never checked).
+    assert run(command=cmd) == "deny"
+
 @pytest.mark.parametrize("cmd", ["jq '.items[]' data.json", "jq -r '.a.b' data.json", "jq . data.json"])
 def test_jq_filter_not_read_as_a_path(cmd):
     # Same shape as `grep`: the first operand is the program, not a file, so its glob
