@@ -85,8 +85,8 @@ def test_auto_mode_keeps_allow(cmd):
     assert run(command=cmd, mode="bypassPermissions") == "allow"
 
 def test_auto_mode_keeps_the_deny_reason():
-    assert run(command="pip install requests", mode="bypassPermissions") == "deny"
-    assert "uv" in reason(command="pip install requests", mode="bypassPermissions")
+    assert run(command="gh pr list", mode="bypassPermissions") == "deny"
+    assert "MCP" in reason(command="gh pr list", mode="bypassPermissions")
 
 # ============================================================================
 # Description quality
@@ -240,8 +240,6 @@ def test_assignment_redirect_is_still_checked(cmd, mode, decision):
 # ============================================================================
 
 @pytest.mark.parametrize("cmd", [
-    "pip install x",
-    "mypy .",
     "powershell -c ls",
     "cmd /c dir",
     "git -C /x status",
@@ -249,11 +247,6 @@ def test_assignment_redirect_is_still_checked(cmd, mode, decision):
     "cd /somewhere && ls",  # rule 2.3: a `cd` may not share the call
 ])
 def test_denied_commands(cmd):
-    assert run(command=cmd) == "deny"
-
-@pytest.mark.xfail(reason="rule 2.7: pre_shell.check_command has no `python` branch (the pip/mypy ones survived), so it falls through to the unknown-command ask", strict=True)
-@pytest.mark.parametrize("cmd", ["python script.py", "python -m http.server", "python3 script.py"])
-def test_python_denied(cmd):
     assert run(command=cmd) == "deny"
 
 @pytest.mark.parametrize("cmd", [
@@ -786,9 +779,8 @@ def test_git_output_flag_without_value_does_not_crash():
 # Case-sensitive command matching
 # ============================================================================
 
-@pytest.mark.parametrize("cmd", ["PIP install x", "GIT push --force"])
-def test_uppercase_denied_commands_still_denied(cmd):
-    assert run(command=cmd) == "deny"
+def test_uppercase_denied_commands_still_denied():
+    assert run(command="GIT push --force") == "deny"
 
 @pytest.mark.xfail(reason="rule 2.7: pre_shell.check_command has no `python` branch", strict=True)
 def test_uppercase_python_still_denied():

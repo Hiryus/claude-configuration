@@ -4,7 +4,6 @@ Hook pre-processing `Bash` calls to enforce the security rules.
 
 import json
 import os
-import re
 import sys
 from collections.abc import Mapping
 
@@ -69,12 +68,6 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
 
     if command.base == "grep":
         return grep.validate(command, context)
-
-    if command.base == "mypy":
-        return (Decision.DENY, "Do not use `mypy`. Use ty with `uv run ty` instead.")
-        
-    if re.match(r"^pip[\d.]*$", command.base): # PIP
-        return (Decision.DENY, "Do not use `pip`. Use `uv add`, `uv sync`, or `uvx` instead.")
 
     if command.base in ["source", "."]:
         return (Decision.DENY, f"Do not use `{command.base}`: sourcing a file is not authorized on the host.")

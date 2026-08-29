@@ -1,175 +1,120 @@
-# Code review — last 8 commits (`ba486d5` back to `071611e`)
+# Code review — current state after `aec8d57..748371d` (6 commits since the last review)
 
-Scope: 26 files, ~850 insertions / ~930 deletions.
+Scope: 6 commits (`aec8d57` cleanup/rename, `9aaf788` template path fix, `6865e5c` docker-volumes spec
+clarification, `4799e90` opaque-tail parsing + CLAUDE.md, `db8a845` more git verbs, `748371d` test-path
+fix), 18 files touched, 201 insertions / 138 deletions (excluding both sides of the `review.md` and
+`rules-gaps.md` relocations). `scripts/rules.md` moved to `SECURITY.md` (repo root) and
+`scripts/rules-gaps.md` to `tmp/rules-gaps.md` in `aec8d57`; anchors below use the new locations.
 
-Baseline checks run before the review:
+Baseline checks run before this update:
 
-- `uv run --with bashlex --with pytest pytest scripts/tests` → **596 passed, 1 skipped, 30 xfailed**
+- `uv run --with bashlex --with pytest pytest scripts/tests` → **600 passed, 1 skipped, 30 xfailed**
+  (was 596/1/30 — the 4 new passes are `4799e90`'s opaque-tail crash-regression tests)
 - `uvx ruff check scripts` → clean
 - `uvx ty check scripts` → clean
 
-Every finding below was confirmed by driving `pre_shell.main()` against crafted command lines,
-not by reading alone. Findings already tracked in `rules-gaps.md` (#36, #37, #38, #32, #12, …)
-are deliberately omitted.
+Findings already tracked in `tmp/rules-gaps.md` are omitted, same as before.
 
 
-## 1. `rules.md` §2.7 lost the pip/mypy/python rules, but the code still enforces them
+### 2. `jq --slurpfile=NAME FILE` still skips the file check
 
-**Summary.** A commit deleted the "use `uv` instead of pip/python/mypy" paragraphs from the
-specification, but left the matching denials in the hook. The spec and the code now disagree, and
-the denial messages send the agent toward commands that are themselves refused.
-
-**Impact.** Moderate, and it bites in normal use. In **auto** mode the agent hits a hard wall with
-no exit:
-
-```
-deny | mypy .            -> Do not use `mypy`. Use ty with `uv run ty` instead.
-deny | uv run ty check   -> denied: `uv` is not in the allow-list
-deny | pip install x     -> Do not use `pip`. Use `uv add`, `uv sync`, or `uvx` instead.
-deny | uv add requests   -> denied: `uv` is not in the allow-list
-```
-
-Every route the message recommends is an `ask`, which auto mode converts to `deny`. The agent is
-told what to do and then blocked from doing it.
-
-**Description / root cause.** Commit `9f7e04a` ("remove python/uv/uvx rules for simplification and
-cleanup") removed the §2.7 clauses from `rules.md` and the `uv` analyzer branch, but three things
-survived it:
-
-- `pre_shell.py:69-73` still returns `DENY` for `mypy` and for `^pip[\d.]*$`;
-- `tests/test_pre_shell.py:242-252` still asserts both are denied;
-- `tests/test_pre_shell.py:254` is a `strict=True` xfail named `test_python_denied` whose reason
-  cites "rule 2.7 … (the pip/mypy ones survived)" — a rule that no longer exists in the document.
-
-`rules-gaps.md`, which exists precisely to record spec-vs-code divergence, has no §2.7 entry.
-Since the live tests still pin the behaviour, the **document** is the stale side, not the code.
-
-**Suggested fixes.**
-
-- *Preferred:* restore a short §2.7 clause covering `pip` and `mypy` (and state explicitly what
-  `python` should do, so the strict xfail points at a real rule). Purely documentation — zero
-  behavioural risk.
-- Then fix the messages, which are now misleading whichever way you go: either re-allow the
-  recommended escape hatch (`uv run ty`, `uv add`) or reword the denials to point at something the
-  hook actually permits (e.g. running the tool in a container, per the standing recommendation in
-  §2 of `rules.md`).
-- *Alternative:* if the removal was meant to be total, delete both branches plus the three tests.
-  Side effect: `mypy`/`pip` degrade from `deny` to `ask`, which is a real loosening — so this only
-  makes sense if that was the intent.
-
-
-## 2. `jq --slurpfile=NAME FILE` skips the file check entirely (regression from `ba486d5`)
-
-**Summary.** The new "flag eats two words" support only works in the `--flag value` spelling.
-Written with an `=`, the second word — the one that can be a file path — silently falls through and
-is never checked. For `jq` it then gets discarded as the filter program, so a secret file passes.
-
-**Impact.** Low in practice, real as a checker hole. Confirmed:
+Unchanged: `scripts/parsers/arguments.py:123-124`, the `=` branch of `parse_value`, still ignores
+`value_count` and returns after consuming nothing further, so `--slurpfile=a .env` leaves `.env` as
+operand #0, which `analyzers/readonly.py:14-20` then drops as jq's filter program.
 
 ```
 deny  | jq --slurpfile a .env . d.json           <- correct
 allow | jq --slurpfile=a .env . d.json           <- .env never checked
-allow | jq --rawfile=a .env . d.json
-allow | jq --slurpfile=a /home/other/x . d.json  <- out-of-project read, no ask
 ```
 
-Before this commit the same line was **denied**: these binaries were parsed with an empty flag
-table, so `.env` stayed an operand and was path-checked. That makes it a regression, not a
-pre-existing gap.
-
-To be precise about severity: `jq` itself does not accept the `=` spelling for these options, so
-the command would fail at runtime and no data would actually leak. This is a hole in the checker's
-model, not a live exfiltration path.
-
-**Description / root cause.** `parsers/arguments.py:114-120`:
-
-```python
-if "=" in token.text:
-    return Token(text=token.text.partition("=")[2], expansions=token.expansions)  # value_count ignored
-elif value_required:
-    if len(tokens) < value_count: raise ParseError(...)
-    consumed = [tokens.pop(0) for _ in range(value_count)]
-    return Token(text=consumed[-1].text, expansions=frozenset(...))
-```
-
-The `=` branch predates `value_count` and was never taught about it. So `--slurpfile=a` yields
-value `"a"` and consumes nothing further. `.env` becomes operand #0, and `analyzers/readonly.py:14-20`
-then drops operand #0 as jq's filter program (correct for `jq '.x' file`, wrong here). Two
-independently reasonable rules compose into a blind spot. The same shape applies to `--rawfile=`,
-`--arg=`, `--argjson=`; only `jq` declares `value_count=2`, so nothing else is affected.
-
-**Suggested fixes.**
-
-- *Cleanest, and it matches rule 2.1 ("if parsing fails, deny"):* raise `ParseError` in the `=`
-  branch when `value_count > 1`. The spelling is invalid for the only tool that uses it, so
-  refusing to parse it is both correct and safe — an unparseable line is already denied. Two lines,
-  no effect on any other command.
-- *Alternative:* in the `=` branch, when `value_count > 1`, take the `=` part as the first word and
-  pop the remaining `value_count - 1` from `tokens`. Closer to "what would the tool do", but it
-  invents semantics `jq` does not have.
-- Either way, put the fix in `parse_value`, not in `readonly.operands()` — the defect is in the
-  shared grammar walker, and patching the jq-specific side would leave the general case broken for
-  the next two-word flag added.
+Worth noting: `4799e90` added a sibling check two lines below the value-count read, in the
+`elif value_required:` branch (`parsers/arguments.py:130-131`) — a `flag-shaped word` raises
+`ParseError` instead of being silently swallowed as a value. That's the same defensive shape the
+`=` branch still lacks; the suggested fix (raise `ParseError` in the `=` branch when
+`value_count > 1`) now has direct precedent in the same function, written by the same commit that
+otherwise left this branch alone.
 
 
-## 3. `file -C -m PATH` writes a file but is classified as a read
+### 3. `file -C -m PATH` still writes a file classified as a read
 
-**Summary.** `file`'s magic-file option is tabled as an input, which is right for every use except
-one: combined with `-C`, `file` *compiles* the magic file and writes the result.
-
-**Impact.** Low, and narrow. `file -C -m notes` writes `notes.mgc`. Since the reference is recorded
-as a `READ`, the manual-mode "writing X requires your validation" check never fires:
-
-```
-allow | file -C -m out.mgc     (manual mode, in-project target)
-deny  | file -C -m .env        (still denied — the secret rule reads the literal name)
-```
-
-The deny rules are unaffected (they don't care about access mode), and an out-of-project target
-still asks. So the only lost verdict is a manual-mode write prompt on an in-project path.
-
-**Description / root cause.** `parsers/readonly.py:47-50` buckets `-m`/`--magic-file` as
-`input-file`. That is correct for plain `file -m magic target`; the module docstring's three-bucket
-model just has no way to express "read, unless `-C` is also present". `file` is otherwise genuinely
-read-only, so this is the single exception.
-
-**Suggested fixes.** Worth noting the misclassification rather than patching it, because a
-mechanical fix doesn't actually name the right file:
-
-- Re-bucketing `-m` as `output-file` would be wrong in the common case *and* still wouldn't help —
-  the file written is `PATH.mgc`, not `PATH`, so the reference would name a path that is never
-  touched.
-- A correct fix needs a small conditional in `analyzers/readonly.py`: when `command.base == "file"`
-  and `-C` is present, emit an extra `Reference(WRITE, f"{value}.mgc")`. That is a per-binary
-  special case in a module that has so far kept exactly one (jq's operand rule), so it's a judgment
-  call whether it earns its keep.
-- Cheapest option: record it in `rules-gaps.md` alongside the other §2.8 entries and move on.
+Unchanged: `scripts/parsers/readonly.py:50` still tables `-m`/`--magic-file` as `input-file`. `file -C
+-m notes` writes `notes.mgc`; the manual-mode "writing X requires validation" check never fires for an
+in-project target. Still a narrow, low-impact gap; still worth only a `tmp/rules-gaps.md` line unless
+someone wants the per-binary special case in `analyzers/readonly.py`.
 
 
-## Also noticed (not defects in these commits)
+### Also noticed (not defects in these 6 commits, still unchanged)
 
-- **`CommandLine.subcommand`** (`models/parsing.py:101`) and **`Invocation.subcommand`**
-  (`models/parsing.py:146`) have no readers anywhere. History check: `command.subcommand` was last
-  used before `442ceef`, well before this range, so both predate these commits. Worth deleting
-  during the next cleanup pass, since the "cleanup" commits in this range removed the
-  `conditional`/`scope`/`dynamic` fields for exactly this reason.
-- **`CommandLine.environment`** is read at `analyzers/git.py:72` but never written, so the `GIT_DIR`
-  environment check is inert. This one is deliberate scaffolding: it is `rules-gaps.md` #12 and is
-  pinned by two `strict=True` xfail tests.
+- **`CommandLine.subcommand`** (`models/parsing.py:102-103`) and **`Invocation.subcommand`**
+  (`models/parsing.py:147-149`) still have no readers anywhere. Both dataclasses were touched twice in
+  this range — `db8a845` added grammar nodes that flow through `Invocation`, and `4799e90` added the
+  `opaque_tail` field directly next to `Invocation.subcommand` — without anyone needing or removing the
+  dead property. Still worth deleting in the next cleanup pass.
+- **`CommandLine.environment`** is still read only at `analyzers/git.py:72` and never written anywhere,
+  so the `GIT_DIR`-via-environment check is still inert scaffolding. Still deliberate: `tmp/rules-gaps.md`
+  #12 (renumbered from `scripts/rules-gaps.md`) and pinned by the same two `strict=True` xfail tests.
 
 
-## What held up
+### 4. The `rules.md` → `SECURITY.md` rename left dead references, including one the agent sees live
 
-The rest of the range holds up well under probing:
+`aec8d57` moved `scripts/rules.md` to `SECURITY.md` and fixed the two callers that read it as data
+(`generic.py`'s `check_mode_rules`, later re-fixed for the `~`-path bug in `9aaf788`). It missed every
+place that only *mentions* the old path in prose:
 
-- The `Reference`-carries-expansions refactor is consistently applied — every `Reference(...)`
-  construction site was checked.
-- `strip_container_argv`'s trust conditions are sound; no docker flag in `RUN_FLAGS`/`EXEC_FLAGS` is
-  mis-declared as a boolean in a way that would let the strip point drift and hide a
-  `--privileged`.
-- All thirteen read-only grammars were audited for the two failure modes the module docstring warns
-  about — a path-valued flag bucketed as `option`, and an optional-value flag declared
-  `value_required=True` that would swallow the next filename. Neither occurs.
-- The compose global flag table is fully partitioned by `COMPOSE_ALLOWED_FLAGS` ∪
-  `COMPOSE_UNSAFE_FLAGS` ∪ `{help}`, so no global option slips through the `ALLOWED_COMMANDS`
-  branch unchecked.
+- `scripts/templates/auto_mode_denial.md:8` — **"The allowed list is described in
+  `~/.claude/scripts/rules.md`."** This is the message rendered back to the agent on every auto-mode
+  denial (`generic.py:check_mode_rules`); it now sends the agent looking for a file that doesn't
+  exist, on the one path where there's no user around to notice the mistake.
+- `README.md:39` and `README.md:52` — both link to `scripts/rules.md`.
+- `scripts/generic.py:50` and `scripts/generic.py:77` — docstring links to `rules.md#1-file-rules` and
+  `rules.md#modes`.
+- `scripts/parsers/readonly.py:2` — links to `../rules.md#28-read-only-binaries`; doubly stale, since
+  §2.8 was also renamed "Read binaries" in the same commit (`aec8d57`), so even a path fix would still
+  need `#28-read-binaries`.
+
+(`scripts/tests/test_post_markdown.py:75` also names `scripts/rules.md`, but only in a comment
+explaining a test fixture — no functional effect, not counted above.)
+
+**Suggested fix:** update all six references — the `auto_mode_denial.md` one first, since it's the
+only one an LLM (not a human) reads, and correct the `readonly.py` anchor while at it.
+
+
+### 5. `6865e5c`'s volume-mount clarification outran both the code and a strict xfail
+
+`6865e5c` rewrote the docker-volumes paragraph of §3.3. It now says explicitly that `/tmp` may be
+mounted read-write, that a read-only-only directory (e.g. `~/.claude`) may be mounted `ro`, and adds:
+*"Volumes from other containers can also be mounted in read-only."* Checking both directions against
+`analyzers/docker.py`:
+
+- **`--volumes-from` never inspects its `:ro`/`:rw` suffix.** `parse_mount_ref`
+  (`analyzers/docker.py:229-271`) only iterates `invocation.values("volume")` and
+  `invocation.values("mount")`; `volumes-from` sits in `MOUNT_FLAGS` (`analyzers/docker.py:138`) so it
+  clears the allowed-flags gate at `validate()` (`:337-338`) but its value is never read. Confirmed:
+  `docker run --volumes-from other:rw alpine ls` and `...other:ro alpine ls` both **allow**, with no
+  distinction — unlike `-v`/`--mount`, where the suffix is what decides `Access.READ` vs
+  `Access.WRITE` (`:252`, `:268`). Unlike the mount-source path, the `:ro`/`:rw` suffix genuinely *is*
+  on the command line, so this one is checkable, not merely "trust the container" (that caveat still
+  applies to whatever the *named* container itself has mounted, which is unknowable statically either
+  way). Only the bare, unsuffixed form is covered by an existing test
+  (`test_pre_shell.py:1179,1268`); `:ro`/`:rw` spellings are untested. Not yet in
+  `tmp/rules-gaps.md`.
+
+- **The `strict=True` xfail at `test_pre_shell.py:1364-1375`
+  (`test_mount_outside_the_project_asks`) is now half-stale.** Its reason string says rule 3.3 is
+  "stricter than the file rules" for `/tmp` and `~/.claude`; the new §3.3 text says the opposite for 3
+  of its 4 parametrized cases. Re-run in `acceptEdits` mode (as the test does):
+
+  ```
+  allow | docker run --rm -v /tmp/work:/work alpine                                    <- now spec-compliant
+  allow | docker run --rm --mount type=bind,source=/tmp/work,target=/work alpine        <- now spec-compliant
+  allow | docker run --rm --mount type=bind,source=~/.claude,target=/x,ro alpine        <- now spec-compliant
+  allow | docker volume create --opt device=/tmp/work data                              <- still a real gap
+  ```
+
+  Only the last case is still a genuine mismatch: §3.3's `docker volume create` clause is unchanged
+  ("allowed as long as it only references the project directory"). It is *not* covered by
+  `tmp/rules-gaps.md` #30 either — that entry is about `-v`/`--mount` on `run`/`exec`/`create`, not
+  about `volume create`'s `--opt device=` — so this specific mismatch is currently untracked anywhere.
+  The other three cases should be split out of this xfail (they now pass for the right reason) so the
+  remaining one can get its own `rules-gaps.md` entry instead of being graded against a rule the spec
+  no longer states.
