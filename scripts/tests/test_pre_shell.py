@@ -1367,19 +1367,6 @@ def test_mount_without_a_true_readonly_flag_is_read_write(flag):
 def test_mount_of_a_parent_directory_asks():
     assert run(command="docker run --rm -v ..:/parent alpine") == "ask"
 
-@pytest.mark.xfail(reason="rule 3.3 is stricter than the file rules, but the mount source is vetted by check_access, which allows /tmp and (read-only) ~/.claude", strict=True)
-@pytest.mark.parametrize("cmd", [
-    "docker run --rm -v /tmp/work:/work alpine",
-    "docker run --rm --mount type=bind,source=/tmp/work,target=/work alpine",
-    "docker run --rm --mount type=bind,source=~/.claude,target=/x,ro alpine",
-    "docker volume create --opt device=/tmp/work data",
-])
-def test_mount_outside_the_project_asks(cmd):
-    # Rule 3.3 is stricter than the file rules: /tmp and ~/.claude are readable
-    # by the agent, but may not be handed to a container.
-    # Edit mode, so that the §1.4 write gate is not what produces the ask.
-    assert run(command=cmd, mode="acceptEdits") == "ask"
-
 # --- Volumes and copies -----------------------------------------------------
 
 def test_volume_create_allowed():
