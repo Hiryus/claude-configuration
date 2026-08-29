@@ -8,6 +8,7 @@ GRAMMAR = CommandSyntax(
         Flag(name="config", keys=["-c"], value_required=True),
         Flag(name="git-dir", keys=["--git-dir", "-C"], value_required=True),
         Flag(name="output", keys=["--output", "-o"], value_required=True),
+        Flag(name="version", keys=["--version"], value_required=False),
     ],
     subcommands=[
         # The read-only verbs carry no table of their own: they only need a node so the
@@ -15,13 +16,16 @@ GRAMMAR = CommandSyntax(
         CommandSyntax(aliases=["add"]),
         CommandSyntax(aliases=["check-ignore"]),
         CommandSyntax(aliases=["diff"]),
+        CommandSyntax(aliases=["filter-branch"]),
         CommandSyntax(aliases=["grep"]),
         CommandSyntax(aliases=["log"]),
         CommandSyntax(aliases=["ls-files"]),
         CommandSyntax(aliases=["ls-tree"]),
         CommandSyntax(aliases=["merge-base"]),
+        CommandSyntax(aliases=["rev-list"]),
         CommandSyntax(aliases=["rev-parse"]),
         CommandSyntax(aliases=["show"]),
+        CommandSyntax(aliases=["stash"]),
         CommandSyntax(aliases=["status"]),
         CommandSyntax(aliases=["branch"], flags=[
             Flag(name="all", keys=["--all", "-a"], value_required=False),
