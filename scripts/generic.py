@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from models.analyzer import Context, Decision, Mode
@@ -14,6 +15,9 @@ from utils.filesystem import (
     standardize,
 )
 from utils.format import format_references
+
+DIRECTORY = os.path.dirname(__file__)
+TPL_DIR = os.path.join(DIRECTORY, "templates")
 
 # ============================================================================
 # Hook I/O
@@ -74,7 +78,7 @@ def check_mode_rules(decision: Decision, reason: str, mode: Mode) -> tuple[Decis
     since nobody is there to validate it. The `ask` reason is kept as context.
     """
     if decision is Decision.ASK and mode is Mode.AUTO:
-        with open("~/.claude/scripts/templates/auto_mode_denial.md") as file:
+        with open(os.path.join(TPL_DIR, "auto_mode_denial.md")) as file:
             return (Decision.DENY, file.read().strip().format(reason=reason))
     return (decision, reason)
 
