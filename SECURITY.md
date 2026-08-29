@@ -191,7 +191,6 @@ The `cat`, `cmp`, `cut`, `diff`, `file`, `head`, `jq`, `less`, `ls`, `more`, `ta
 **Reason:** These commands are widely used and blocking them would impede the agent speed/capabilities.
 Since they mostly print or format information and are relatively easy to parse, they are deemed safe enough to run on the host.
 
-
 ### 2.9. Specific git rules
 
 Git gets specific treatment because it is an important interface for coding and is preferable to do outside a container (especially since `fetch`, `pull`, and `push` commands require credentials that are not in the container).
@@ -208,10 +207,7 @@ Modifying another project is unacceptable and reading files with git could also 
 
 #### 2.9.2. History security
 
-The following branch rules apply:
-- Pushing on the `main` and `master` branches is **denied**.
-- Pushing is **allowed** on `feat/` and `fix/` branches (assuming no `-f`/`--force` option).
-- Using another branch is an **ask**.
+Since there is no reliable way to ensure a push lands on a specific branch (esp. because of time of check vs. time of use, but not only), any `git push` is an **ask**.
 
 Additionally, `git push` with the option `-f`/`--force`, and `git reset` with the `--hard` option are **denied**.
 
