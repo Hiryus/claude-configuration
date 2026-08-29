@@ -72,7 +72,6 @@ def test_is_idempotent():
 # ============================================================================
 
 def test_leaves_inline_pipes_alone():
-    # scripts/rules.md is full of shell fragments like `>|` in prose.
     source = "The `>`, `>>`, `>|` redirects count as writes.\n\nNext line.\n"
     assert align_tables(source) == source
 

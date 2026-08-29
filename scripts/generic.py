@@ -47,8 +47,7 @@ def check_access(command: CommandLine, references: list[Reference], context: Con
 
 def check_file_rules(references: list[Reference], context: Context) -> tuple[Decision, str]:
     """
-    The [File rules](rules.md#1-file-rules), applied to every path a call
-    accesses, whatever the tool that accesses them.
+    The [file rules](SECURITY.md#1-file-rules), applied to every path a call accesses, whatever the tool that accesses them.
     The decision is the worst one across all the references.
 
     A path built from an expansion is an ASK, but only after the DENY checks:
@@ -74,8 +73,8 @@ def check_file_rules(references: list[Reference], context: Context) -> tuple[Dec
 
 def check_mode_rules(decision: Decision, reason: str, mode: Mode) -> tuple[Decision, str]:
     """
-    The [Modes rules](rules.md#modes): in auto mode an `ask` becomes a `deny`,
-    since nobody is there to validate it. The `ask` reason is kept as context.
+    The [modes rules](SECURITY.md#modes): in auto mode an `ask` becomes a `deny`, since nobody is there to validate it.
+    The `ask` reason is kept as context.
     """
     if decision is Decision.ASK and mode is Mode.AUTO:
         with open(os.path.join(TPL_DIR, "auto_mode_denial.md")) as file:

@@ -1,6 +1,5 @@
 """
-The read-only binaries of [rule 2.8](../rules.md#28-read-only-binaries): commands whose operands
-are the files they read.
+The read-only binaries: commands whose operands are the files they read.
 
 Only the value-taking flags are tabled: an untabled one is already recorded as an unknown flag that
 eats nothing, which is exactly right for a boolean. A value-taking flag left out, on the contrary,

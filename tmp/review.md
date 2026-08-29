@@ -16,18 +16,6 @@ Baseline checks run before this update:
 Findings already tracked in `tmp/rules-gaps.md` are omitted, same as before..
 
 
-### Also noticed (not defects in these 6 commits, still unchanged)
-
-- **`CommandLine.subcommand`** (`models/parsing.py:102-103`) and **`Invocation.subcommand`**
-  (`models/parsing.py:147-149`) still have no readers anywhere. Both dataclasses were touched twice in
-  this range — `db8a845` added grammar nodes that flow through `Invocation`, and `4799e90` added the
-  `opaque_tail` field directly next to `Invocation.subcommand` — without anyone needing or removing the
-  dead property. Still worth deleting in the next cleanup pass.
-- **`CommandLine.environment`** is still read only at `analyzers/git.py:72` and never written anywhere,
-  so the `GIT_DIR`-via-environment check is still inert scaffolding. Still deliberate: `tmp/rules-gaps.md`
-  #12 (renumbered from `scripts/rules-gaps.md`) and pinned by the same two `strict=True` xfail tests.
-
-
 ### 4. The `rules.md` → `SECURITY.md` rename left dead references, including one the agent sees live
 
 `aec8d57` moved `scripts/rules.md` to `SECURITY.md` and fixed the two callers that read it as data
