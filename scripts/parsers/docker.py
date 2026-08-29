@@ -889,7 +889,7 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
             Flag(name="help", keys=["--help"], value_required=False),
             Flag(name="no-tty", keys=["-T", "--no-tty"], value_required=False),
             Flag(name="privileged", keys=["--privileged"], value_required=False),
-        ]),
+        ], opaque_tail=True),
         CommandSyntax(aliases=["export"], flags=[
             Flag(name="index", keys=["--index"], value_required=True),
             Flag(name="output", keys=["-o", "--output"], value_required=True),
@@ -1015,7 +1015,7 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
             Flag(name="rm", keys=["--rm"], value_required=False),
             Flag(name="service-ports", keys=["-P", "--service-ports"], value_required=False),
             Flag(name="use-aliases", keys=["--use-aliases"], value_required=False),
-        ]),
+        ], opaque_tail=True),
         CommandSyntax(aliases=["scale"], flags=[
             Flag(name="dry-run", keys=["--dry-run"], value_required=False),
             Flag(name="help", keys=["--help"], value_required=False),
@@ -1145,11 +1145,11 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
             Flag(name="help", keys=["--help"], value_required=False),
             Flag(name="quiet", keys=["-q", "--quiet"], value_required=False),
         ]),
-        CommandSyntax(aliases=["create"], flags=CREATE_FLAGS),
+        CommandSyntax(aliases=["create"], flags=CREATE_FLAGS, opaque_tail=True),
         CommandSyntax(aliases=["diff"], flags=[
             Flag(name="help", keys=["--help"], value_required=False),
         ]),
-        CommandSyntax(aliases=["exec"], flags=EXEC_FLAGS),
+        CommandSyntax(aliases=["exec"], flags=EXEC_FLAGS, opaque_tail=True),
         CommandSyntax(aliases=["export"], flags=[
             Flag(name="output", keys=["-o", "--output"], value_required=True),
             Flag(name="help", keys=["--help"], value_required=False),
@@ -1190,7 +1190,7 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
             Flag(name="link", keys=["-l", "--link"], value_required=False),
             Flag(name="volumes", keys=["-v", "--volumes"], value_required=False),
         ]),
-        CommandSyntax(aliases=["run"], flags=RUN_FLAGS),
+        CommandSyntax(aliases=["run"], flags=RUN_FLAGS, opaque_tail=True),
         CommandSyntax(aliases=["start"], flags=START_FLAGS),
         CommandSyntax(aliases=["stats"], flags=STATS_FLAGS),
         CommandSyntax(aliases=["stop"], flags=[
@@ -1255,12 +1255,12 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
         Flag(name="help", keys=["--help"], value_required=False),
         Flag(name="quiet", keys=["-q", "--quiet"], value_required=False),
     ]),
-    CommandSyntax(aliases=["create"], flags=CREATE_FLAGS),
+    CommandSyntax(aliases=["create"], flags=CREATE_FLAGS, opaque_tail=True),
     CommandSyntax(aliases=["diff"], flags=[
         Flag(name="help", keys=["--help"], value_required=False),
     ]),
     CommandSyntax(aliases=["events"], flags=EVENTS_FLAGS),
-    CommandSyntax(aliases=["exec"], flags=EXEC_FLAGS),
+    CommandSyntax(aliases=["exec"], flags=EXEC_FLAGS, opaque_tail=True),
     CommandSyntax(aliases=["export"], flags=[
         Flag(name="output", keys=["-o", "--output"], value_required=True),
         Flag(name="help", keys=["--help"], value_required=False),
@@ -1556,7 +1556,7 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
         Flag(name="help", keys=["--help"], value_required=False),
         Flag(name="no-prune", keys=["--no-prune"], value_required=False),
     ]),
-    CommandSyntax(aliases=["run"], flags=RUN_FLAGS),
+    CommandSyntax(aliases=["run"], flags=RUN_FLAGS, opaque_tail=True),
     CommandSyntax(aliases=["save"], flags=[
         Flag(name="output", keys=["-o", "--output"], value_required=True),
         Flag(name="platform", keys=["--platform"], value_required=True),

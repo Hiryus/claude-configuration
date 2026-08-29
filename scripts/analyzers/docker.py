@@ -5,6 +5,7 @@ from models.analyzer import Context, Decision
 from models.parsing import Access, CommandLine, Invocation, Reference
 from parsers import docker
 from utils.format import format_references
+from utils.parsing import is_flag
 
 # Options that (may) let the container escape into the host.
 ROOT_USERS = ["root", "0"]
@@ -102,17 +103,7 @@ ALLOWED_COMMANDS = [
     "docker rmi",
 ]
 
-# Commands that start a process in a container: allowed, but only with verified options and mounts.
-RUN_COMMANDS = [
-    "docker compose exec",
-    "docker compose run",
-    "docker container create",
-    "docker container exec",
-    "docker container run",
-    "docker create",
-    "docker exec",
-    "docker run",
-]
+# Options allowed on commands that start a process in a container (`opaque_tail` grammar nodes).
 RUN_ALLOWED_FLAGS = [
     "detach",
     "entrypoint",
@@ -159,14 +150,6 @@ COPY_COMMANDS = ["docker compose cp", "docker container cp", "docker cp"]
 # ============================================================================
 # Utility functions
 # ============================================================================
-
-
-def is_flag(text:str|None) -> bool:
-    """
-    A flag-shaped word, as opposed to a value that merely starts with a dash: the negative numbers
-    docker takes are ordinary values (`--memory-swap -1`, `--oom-score-adj -500`).
-    """
-    return bool(text) and bool(re.match(r"^-\D", text or ""))
 
 
 def is_path(text:str) -> bool:
@@ -218,7 +201,7 @@ def strip_container_argv(invocation:Invocation) -> Invocation:
         return invocation
     if any(not x.known or is_flag(x.value) for x in invocation.arguments[:index]):
         return invocation
-    return Invocation(cmd_parts=invocation.cmd_parts, arguments=invocation.arguments[:index + 1])
+    return Invocation(cmd_parts=invocation.cmd_parts, arguments=invocation.arguments[:index + 1], opaque_tail=invocation.opaque_tail)
 
 
 # ============================================================================
@@ -326,7 +309,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     reasons:list[str] = [] # reasons to ask are collected, not returned on the spot.
     references = invocation.references(Access.READ, "env-file")
 
-    if invocation.command in RUN_COMMANDS:
+    if invocation.opaque_tail:
         invocation = strip_container_argv(invocation)
 
     if unsafe := [x.key for x in invocation.options if x.name in UNSAFE_FLAGS]:
@@ -349,7 +332,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
         else:
             return (Decision.ALLOW, "The `docker --version` command is allowed.")
 
-    elif invocation.command in RUN_COMMANDS:
+    elif invocation.opaque_tail:
         mounts, unverified = parse_mount_ref(invocation)
         allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_ALLOWED_FLAGS if "compose" in invocation.cmd_parts else [])
         if disallowed := [x.key for x in invocation.options if x.name not in allowed]:

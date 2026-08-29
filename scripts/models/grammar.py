@@ -24,6 +24,9 @@ class CommandSyntax:
     aliases:list[str] # keys[0] is canonical: ("list", "ls")
     flags:list[Flag]  = field(default_factory=list)
     subcommands:list["CommandSyntax"] = field(default_factory=list)
+    opaque_tail:bool = False
+    # Once an operand appears under this node, later tokens may belong to a separate, unrelated
+    # command line (ex: `docker run IMAGE CMD ARGS`) and must not be forced through this grammar's flags.
 
     def __post_init__(self):
         if len(self.aliases) == 0:

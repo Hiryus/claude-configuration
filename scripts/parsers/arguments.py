@@ -4,6 +4,7 @@ Grammar-driven argument walking.
 
 from models.grammar import CommandSyntax, Flag
 from models.parsing import Argument, CommandLine, Invocation, ParseError, Token
+from utils.parsing import is_flag
 
 
 def parse(command_line:CommandLine, syntax:CommandSyntax) -> Invocation:
@@ -33,7 +34,15 @@ def parse(command_line:CommandLine, syntax:CommandSyntax) -> Invocation:
         elif token.text.startswith("-"):
             # The token is a named argument (a flag): parse it and consume its value if any.
             # This may expand into several arguments if it's a glued short-flag group (e.g. "-it").
-            arguments.extend(parse_flag(token, tokens, flags))
+            if operand_seen and syntax.opaque_tail:
+                # Past the trusted operand of an opaque-tailed node, a flag-shaped token may belong
+                # to a separate, unrelated command line: record it as unknown rather than aborting.
+                try:
+                    arguments.extend(parse_flag(token, tokens, flags))
+                except ParseError:
+                    arguments.append(build_argument(key=token.text.partition("=")[0], name=None, token=token, value=None, known=False))
+            else:
+                arguments.extend(parse_flag(token, tokens, flags))
         else:
             # The token is a positional argument: record it.
             # It also closes the subcommand walk: every CLI here spells its verbs before its operands,
@@ -41,7 +50,7 @@ def parse(command_line:CommandLine, syntax:CommandSyntax) -> Invocation:
             arguments.append(Argument(value=token.text, expansions=token.expansions))
             operand_seen = True
 
-    return Invocation(cmd_parts=path, arguments=arguments)
+    return Invocation(cmd_parts=path, arguments=arguments, opaque_tail=syntax.opaque_tail)
 
 
 def parse_flag(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> list[Argument]:
@@ -116,6 +125,10 @@ def parse_value(key:str, token:Token, tokens:list[Token], value_required:bool, v
     elif value_required:
         if len(tokens) < value_count:
             raise ParseError(f"flag {key} requires {value_count} value(s), but only {len(tokens)} were provided")
+        # A flag-shaped word is never silently taken as a value: it may hide a genuine error (ex: `--name -v ./x:/y` would name the container "-v" and misplace the volume flag).
+        # Use `--flag=value` or `--` to pass a value that genuinely starts with a dash.
+        if flag_shaped := [x.text for x in tokens[:value_count] if is_flag(x.text)]:
+            raise ParseError(f"flag {key} requires a value, but {flag_shaped} looks like a flag (if this is intended, use `{key}=value` instead)")
         consumed = [tokens.pop(0) for _ in range(value_count)]
         return Token(text=consumed[-1].text, expansions=frozenset(x for word in consumed for x in word.expansions))
     else:
