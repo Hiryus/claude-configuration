@@ -27,10 +27,10 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     A tabled flag eats its value, so a count or a delimiter never reaches the operands to be read as a file.
     """
     invocation = readonly.parse(command)
-    references = invocation.references(Access.READ, "input-file", "program-file")
+    references = invocation.references(Access.READ, "input-file", "program-file", "magic-file")
     references += invocation.references(Access.WRITE, "output-file")
-    references += [
-        Reference(access=Access.READ, text=arg.value, expansions=arg.expansions)
-        for arg in operands(command, invocation) if arg.value is not None
-    ]
+    references += [Reference(access=Access.READ, text=arg.value, expansions=arg.expansions) for arg in operands(command, invocation) if arg.value is not None]
+    if command.base == "file" and invocation.has_arg("compile"):
+        # `-C` compiles `-m`'s value into `PATH.mgc`, an extra write reference alongside its read one.
+        references += invocation.references(Access.WRITE, "magic-file")
     return check_access(command, references, context)

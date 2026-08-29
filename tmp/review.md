@@ -13,15 +13,7 @@ Baseline checks run before this update:
 - `uvx ruff check scripts` → clean
 - `uvx ty check scripts` → clean
 
-Findings already tracked in `tmp/rules-gaps.md` are omitted, same as before.
-
-
-### 3. `file -C -m PATH` still writes a file classified as a read
-
-Unchanged: `scripts/parsers/readonly.py:50` still tables `-m`/`--magic-file` as `input-file`. `file -C
--m notes` writes `notes.mgc`; the manual-mode "writing X requires validation" check never fires for an
-in-project target. Still a narrow, low-impact gap; still worth only a `tmp/rules-gaps.md` line unless
-someone wants the per-binary special case in `analyzers/readonly.py`.
+Findings already tracked in `tmp/rules-gaps.md` are omitted, same as before..
 
 
 ### Also noticed (not defects in these 6 commits, still unchanged)

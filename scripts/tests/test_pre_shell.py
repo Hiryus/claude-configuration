@@ -284,6 +284,14 @@ def test_file_allowed():
 def test_file_outside_project_asks():
     assert run(command="file /etc/passwd") == "ask"
 
+def test_file_compile_flag_makes_magic_file_a_write():
+    # `-C` compiles `-m`'s value into `PATH.mgc`: a write, not just a read.
+    assert run(command="file -C -m notes") == "ask"
+    assert run(command="file -C -m notes", mode="acceptEdits") == "allow"
+
+def test_file_magic_file_without_compile_stays_a_read():
+    assert run(command="file -m notes data.txt") == "allow"
+
 def test_redirect_into_secret_denied():
     assert run(command="echo x > .env") == "deny"
 

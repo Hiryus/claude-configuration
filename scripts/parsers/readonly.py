@@ -47,7 +47,9 @@ GRAMMARS = {
     ]),
 
     "file": CommandSyntax(aliases=["file"], flags=[
-        Flag(name="input-file", keys=["-f", "--files-from", "-m", "--magic-file"], value_required=True),
+        Flag(name="input-file", keys=["-f", "--files-from"], value_required=True),
+        Flag(name="magic-file", keys=["-m", "--magic-file"], value_required=True),
+        Flag(name="compile", keys=["-C", "--compile"], value_required=False),
         Flag(name="option", keys=["-e", "--exclude", "-F", "--separator", "-P", "--parameter"], value_required=True),
     ]),
 
