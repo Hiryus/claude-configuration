@@ -97,6 +97,10 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
             return (Decision.DENY, "`git push --force` is forbidden by the security policy: only the user is allowed to change history.")
         return (Decision.ASK, "`git push` requires the user validation.")
 
+    # `--hard` throws away the working tree with no object left to recover it from, so it is denied like `push --force`.
+    if verb == "reset" and any(x.name == "hard" for x in invocation.options):
+        return (Decision.DENY, "`git reset --hard` is forbidden by the security policy: only the user is allowed to discard uncommitted work.")
+
     if verb == "remote":
         if invocation.command in ["git remote", "git remote get-url", "git remote show"]:
             return (Decision.ALLOW, f"The `{invocation.command}` command is allowed.")

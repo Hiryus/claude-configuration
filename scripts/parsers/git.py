@@ -81,6 +81,9 @@ GRAMMAR = CommandSyntax(
         CommandSyntax(aliases=["push"], flags=[
             Flag(name="force", keys=["--force", "-f"], value_required=False),
         ]),
+        CommandSyntax(aliases=["reset"], flags=[
+            Flag(name="hard", keys=["--hard"], value_required=False),
+        ]),
         CommandSyntax(aliases=["remote"], flags=[
             Flag(name="verbose", keys=["--verbose", "-v"], value_required=False),
         ], subcommands=[

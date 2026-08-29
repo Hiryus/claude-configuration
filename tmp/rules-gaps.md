@@ -9,60 +9,8 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 - **3.3** (#40) — `docker volume create --opt device=` goes through the general write rules (which allow `/tmp`), not the stricter "project directory only" `volume create` clause.
 
 
-## Modes
-
-1. [x] Rule: in **auto** mode every **ask** becomes a **deny**. Current: **ask** stays **ask**, in both the file and the shell hook.
-
-
-## 1.1 No credentials access
-
-2. [x] Rule: `.env.production` is denied. Current: allowed.
-3. [x] Rule: the credential extensions are denied whatever their spelling. Current: only the lowercase spelling is denied (`key.PEM` is allowed).
-4. [x] Rule: the exempted template suffixes are `.example`, `.sample`, `.template`. Current: `.dist` is exempted too.
-
-
-## 1.3 No harness modifications
-
-5. [x] Rule: writing anywhere under `~/.claude` is denied, except when it's the project directory - in this case, writes are ask in manual mode and allowed in the other modes..
-       Current: it is an **ask** when the project sits elsewhere, and an **allow** when the working directory is the harness itself.
-
-
-## 1.4 Allowed folders
-
-6. [x] Rule: writes are automatic in **edit** mode only, so a **manual** mode write is an **ask** - whatever the tool that writes.
-
-
-## 2.3 Current directory
-
-7. [x] Rule: a lone `cd` is allowed. Current: every `cd` is denied.
-35. [x] Rule: the hook must know with certainty where the shell is. Current: the hook simulated the move to track it, and got it wrong in three ways — `-L`/`-P` canonicalization, a target that exists but cannot be entered (no `+x`, ex: `/root`), and a target an earlier command deletes. Closed by dropping the simulation entirely: a `cd` is only allowed alone, so the hook always resolves against the directory the harness reports.
-
-
-## 2.5 Filesystem access
-
-36. [x] Rule: a path built from a substitution or expansion makes the whole command dynamic, hence an **ask**.
-        Closed on the *reference*, not on the command line: the rule's trigger is a **path** built from an expansion, and "the whole command is dynamic" adds nothing once the verdicts aggregate to the worst one. `Reference` now carries the expansions of the token it came from and `check_file_rules` asks on them, after the deny checks (those read the literal text, so `cat $HOME/.ssh/id_rsa` stays a **deny** on its visible `.ssh`). `standardize` no longer runs `expandvars` — resolving the *hook's* environment invented a target the shell would not use.
-        Anchoring the check on the reference is also what keeps §2.8 working for free (cf. #11): `echo $HOME` references no file, so nothing is ever checked, and no exemption list is needed.
-        Two holes found while closing it: a flag value given as a separate word (`-f $VAR`) carried the *flag*'s expansions, not the value's; and a mount spec entirely held in a variable (`-v $SPEC`, `--mount $SPEC`) escaped through the structural short-circuits (`split_mount` finds no separator, `split_fields` no `source=`), so nothing was referenced at all.
-        Left as-is: `$((1+2))` maps to no `Expansion` member, so it is a **deny** rather than an **ask** — stricter than the rule.
-        Side effect on the file hooks: `Read`/`Write` paths carry no expansion metadata, so a literal `$HOME/notes.txt` handed to the tool is now vetted as `<project>/$HOME/notes.txt` (**allow**) instead of resolving outside the project (**ask**). The harness always passes a real path, so this is theoretical.
-
-
 ## 2.8 Read-only binaries
 
-10. [x] Rule: `cut` and `uniq` are allowed unconditionally, `sort` is path-checked. Current: `cut` is path-checked like `cat`, `sort` and `uniq` ask.
-        Closed by fixing the rule, not the code: `cut` and `uniq` take their files as positional operands (no flag involved), and both `sort -o FILE` and `uniq INPUT OUTPUT` write a file, so neither of those two is read-only.
-11. [x] Rule: a simple `$VAR`/`${VAR}` substitution is allowed as an argument to these commands. Current: `echo $HOME` is allowed - these commands reference no file, so nothing is ever checked.
-        Never a real gap: closed by observation, not by a code change. The opposite problem is real, cf. #36.
-37. [x] Rule: only the files these commands read are path-checked. Current: they are parsed with an empty flag table, so no flag consumes its value and every flag value lands in the positionals, i.e. is read as a file.
-        Harmless until #36, which made it visible: a flag value holding an expansion now asks (`head -n $N file`, `jq --arg k "$VAL" . file.json`, `cut -d $D -f1 file`). Over-strict, same shape as the #21 amplification. Fixing it means giving each of these binaries the few flags that take a value.
-        Closed with one grammar per binary (`parsers/readonly.py`) and its analyzer (`analyzers/readonly.py`), on the `grep` model. Only the *value-taking* flags are tabled: an untabled flag is already recorded as unknown-with-no-value, which is what a boolean needs.
-        Each tabled flag is sorted into one of three buckets, because consuming a path without referencing it would be a *loosening*: `option` (a count, a delimiter, a pattern -- eaten and forgotten), `input-file` (a **read**: `diff --from-file`, `file -f`/`-m`, `wc --files0-from`, `jq -f`/`--slurpfile`/`--rawfile`, `less -k`/`-T`) and `output-file` (a **write**: `less -o`/`-O`, which now follows the write rules instead of passing as a read).
-        Two traps, both of them loosenings if missed: an optional-value flag must stay `value_required=False` or it swallows the next word (`ls --color .env`, `tail --follow .env`, `diff --unified` -- unlike `diff -U`, whose short spelling does require its count); and `test` keeps an **empty** table on purpose, since its "flags" are unary operators whose operand *is* the file (`test -f .env`).
-        `Flag` gained a `value_count` (default 1) for the flags that eat two words (`jq --arg NAME VALUE`): the value kept is the last word -- the one that may be a path, cf. `--slurpfile NAME FILE` -- and the expansions of every word swallowed, so none of them escapes the dynamic check of #36.
-        Fixed along the way, same family but reached through the operands: `jq`'s first operand is its filter program, not a file, so `jq '.items[]' data.json` no longer asks on the glob characters of the filter (skipped unless `-f`/`--from-file` already supplied the program, exactly like `grep -e`). Visible side effect: a lone operand is now always the filter, so `jq .env` allows instead of denying -- correct, since jq reads stdin there and touches no file, exactly like `grep .env`.
-        Left over-strict: `jq --args`/`--jsonargs` turn the trailing operands into strings, and `cmp FILE1 FILE2 SKIP1 SKIP2` ends on two byte offsets -- both are still path-checked as operands. `file -m` takes a colon-separated *list* of magic files, referenced as a single path text (unchanged verdict: an **ask** either way).
-        One hole found while closing it, older and wider than §2.8, hence its own entry: #38.
 38. [ ] Rule: every path a read-only binary names is checked. Current: only the `--flag value` and `--flag=value` spellings are; a path glued to a short flag (`file -f.env`, `diff -X.env`, `jq -f.env`, `less -k.env`/`-o.env`, `grep -f.env pat`) is neither consumed as a value nor left in the operands, so nothing is checked at all.
         Same root cause as the docker `-u0` of #29: `parse_glued_args` splits a cluster letter by letter and bails as soon as one is not a tabled flag, and `parse_flag` only matches a short flag as a whole token, so `-f.env` ends up an unknown flag that consumes nothing.
         Pre-existing (the empty flag table behaved the same), and it spans `grep`, `docker` and `find` (`-O2`) alike, so fixing it belongs in `parse_flag` -- a prefix match against the tabled value-taking flags, taking the remainder as the glued value -- not in any single binary's grammar.
@@ -75,9 +23,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 ## 2.9.2 History security
 
-13. [ ] Rule: pushing on `main`/`master` is denied. Current: **ask**.
-14. [ ] Rule: pushing on a `feat/` or `fix/` branch is allowed. Current: **ask**. No branch name is ever looked at: every push that is not `--force` is an **ask**.
-15. [ ] Rule: `git reset --hard` is denied. Current: **ask**.
+15. [x] Rule: `git reset --hard` is denied. Current: **ask**.
 
 
 ## 2.9.3 Configuration
@@ -121,8 +67,6 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 28. [ ] Rule: every podman equivalent is allowed or denied alongside its docker counterpart, and the legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`. Current: none of the three is recognized, so they all fall through to **ask** — including the calls that must be denied, such as `podman run --privileged`.
 29. [ ] Rule (3.3): `--user root`/`-u 0` is denied. Current: denied when the value is a separate word, allowed through when it is glued to the flag (`-u0`).
-30. [x] Rule (3.3): only the project directory and other containers' volumes may be mounted. Current (before `6865e5c`): `/tmp`, `/var/tmp` and (read-only) `~/.claude` may be mounted too.
-        Closed by fixing the rule (`6865e5c`), not the code: §3.3 now explicitly allows `/tmp` read-write and `~/.claude` read-only, matching what the code already did. What the rule still promises for "other containers' volumes" is not checked by the code — split out as #39.
 31. [ ] Rule (3.3): every mount source is checked. Current: a spec that repeats `source=`/`src=` only has one of the two checked, a bind-backed named volume declared through `--volume-opt device=` is not checked, and a spec carrying both `ro` and a contradicting `readonly` is read as read-only.
 32. [ ] Rule (3.3): the container's own argv is not read as docker options. Current: dropped at the first operand, but only when every option before it is tabled and none swallowed a flag-shaped value — otherwise an option may be read as the operand, so the whole line stays under option parsing (`docker run -u0 alpine app --privileged` is still denied). `docker service create` is not covered: it takes an argv too, but is an ask by default.
 33. [ ] Rule (3.4): the build option paths are checked. Current: inside a structured value, only the path-looking fields are checked, so an unanchored one (`--output dest=secrets.env`) is skipped.
@@ -130,4 +74,3 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
         Unlike the mount-source path, the `:ro`/`:rw` suffix genuinely is on the command line, so this is checkable (what the *named* container itself has mounted stays unknowable statically, and that half is still "trust the container"). Only the bare, unsuffixed form is tested (`test_pre_shell.py:1179,1268`).
 40. [ ] Rule (3.3): `docker volume create` may only reference the project directory. Current: its `--opt device=` value goes through the general write-path check (`analyzers/docker.py:357-361`), which exempts `/tmp` like every other write, though §3.3's `volume create` clause carries no such exemption — `docker volume create --opt device=/tmp/work data` allows.
         Distinct from #30/#31, both about `-v`/`--mount`/`--volume-opt` on `run`/`exec`/`create`, not `volume create`'s own `--opt device=`.
-

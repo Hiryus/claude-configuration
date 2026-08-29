@@ -422,6 +422,20 @@ def test_git_push_asks():
 def test_git_push_force_denied(cmd):
     assert run(command=cmd) == "deny"
 
+@pytest.mark.parametrize("cmd", ["git reset", "git reset HEAD~1", "git reset --soft HEAD~1", "git reset --mixed"])
+def test_git_reset_asks(cmd):
+    # Only `--hard` is denied: the rest stays an ASK (2.9.4's allow is not implemented).
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", [
+    "git reset --hard",
+    "git reset --hard HEAD~1",
+    "git reset HEAD~1 --hard",  # the flag sits past the operand
+    "git status && git reset --hard",
+])
+def test_git_reset_hard_denied(cmd):
+    assert run(command=cmd) == "deny"
+
 @pytest.mark.parametrize("cmd", [
     "git remote",
     "git remote -v",
