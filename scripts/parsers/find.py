@@ -10,6 +10,7 @@ GRAMMAR = CommandSyntax(
         Flag(name="exec", keys=["-exec", "-execdir", "-ok","-okdir"], value_required=True),
         Flag(name="optimization", keys=["-O"], value_required=True),
         Flag(name="output-file", keys=["-fls", "-fprint", "-fprint0"], value_required=True),
+        Flag(name="output-file", keys=["-fprintf"], value_required=True, value_count=2),
         Flag(name="pattern", keys=["-name", "-iname", "-path", "-wholename", "-lname"], value_required=True),
         Flag(name="symlinks-following", keys=["-H", "-L", "-P"], value_required=False),
     ],

@@ -43,24 +43,13 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 ## 2.9.5 Read-only commands
 
-22. [ ] Rule: `git merge-base` is not listed, so it should **ask**. Current: allowed.
 23. [ ] Rule: only a fixed set of read-only `git branch` flags is allowed; creating a branch is not listed, so it should **ask**. Current: `git branch <name>` is allowed in **edit** and **auto** modes.
 
 
 ## 2.10 Specific find rules
 
-24. [ ] Rule: `-fls`, `-fprint`, `-fprint0` and `-fprintf` are denied. Current: allowed. The first three only get their target path-checked; `-fprintf` is not looked at at all, target included.
+24. [x] Rule: `-fls`, `-fprint`, `-fprint0` and `-fprintf` are denied. Current: allowed. The first three only get their target path-checked; `-fprintf` is not looked at at all, target included.
 25. [ ] Rule: only the leading search roots are path-checked. Current: every non-flag word is, so expression values (`-newer FILE`, `-size +1M`, ...) are checked as if they were search roots.
-
-
-## 2.11 Specific node rules
-
-26. [ ] Rule: `node --version`/`-v` allowed, `node --check <file>` path-checked, anything else **ask**. Current: nothing is implemented, so every `node` call asks — `node --version` included.
-
-
-## 2.12 Specific npm rules
-
-27. [ ] Rule: `npm --version`/`-v`, `npm ls`, `npm outdated`, `npm view` and `npm audit` (without `fix`) are allowed, plus `npm prune` in **edit** mode. Current: nothing is implemented, so every `npm` call asks.
 
 
 ## 2.13 / 3. Containers

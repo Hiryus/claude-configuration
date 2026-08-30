@@ -354,7 +354,6 @@ def test_write_claude_dir_asks_in_manual_mode_when_it_is_the_project(monkeypatch
 @pytest.mark.parametrize("cmd", [
     "echo x > out.txt",
     "git diff --output=out.txt",
-    "find . -fprint out.txt",
     "docker run --rm -v .:/app alpine",
 ])
 def test_in_project_write_asks_in_manual_mode(cmd):
@@ -748,17 +747,15 @@ def test_find_exec_flags_denied(flag):
     # Rule 2.10: these run an arbitrary program, so they are refused outright.
     assert run(command=f"find . {flag} rm {{}} ;") == "deny"
 
-@pytest.mark.parametrize("cmd", ["find . -fprint out.txt", "find . -fls out.txt", "find . -fprint0 out.txt"])
-def test_find_output_file_follows_the_write_rules(cmd):
-    # The output-file actions are not refused outright: their target is vetted like any other write.
-    assert run(command=cmd, mode="acceptEdits") == "allow"
-
-@pytest.mark.parametrize("cmd", ["find . -fprint /etc/out", "find . -fls ~/other/out"])
-def test_find_output_file_outside_project_asks(cmd):
-    assert run(command=cmd) == "ask"
-
-def test_find_output_file_secret_denied():
-    assert run(command="find . -fprint .env") == "deny"
+@pytest.mark.parametrize("cmd", [
+    "find . -fprint out.txt",
+    "find . -fls out.txt",
+    "find . -fprint0 out.txt",
+    "find . -fprintf out.txt %p",
+])
+def test_find_output_file_flags_denied(cmd):
+    # Rule 2.10: these write find's own report to a file outside the tool's read/write vetting, so they are refused outright.
+    assert run(command=cmd, mode="acceptEdits") == "deny"
 
 @pytest.mark.xfail(reason="`-delete` takes no value, so the FILE_WRITE_FLAGS loop raises ParseError instead of vetting the search roots as writes", strict=True)
 @pytest.mark.parametrize("cmd", ["find . -delete", "find build -delete"])

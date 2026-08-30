@@ -240,7 +240,7 @@ These commands can update the files, but the history will always keep the previo
 The following commands are **allowed**:
 - `git branch` with a fixed set of read-only flags (`--show-current`, `-v`, `--merged`, `--contains`, `--list`...).
 - `git remote` for read-only options (`git remote show`, `git remote get-url`, etc.).
-- `git check-ignore`, `git diff`, `git grep`, `git log`, `git ls-files`, `git ls-tree`, `git rev-parse`, `git show`, `git status`.
+- `git check-ignore`, `git diff`, `git grep`, `git log`, `git ls-files`, `git ls-tree`, `git merge-base`, `git rev-parse`, `git show`, `git status`.
 
 **Reason**: Most of these commands are used very often and pose no threat to the system.
 

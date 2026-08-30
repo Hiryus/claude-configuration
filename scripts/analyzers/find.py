@@ -1,6 +1,6 @@
 from generic import check_access
 from models.analyzer import Context, Decision
-from models.parsing import Access, CommandLine, ParseError, Reference
+from models.parsing import Access, CommandLine, Reference
 from parsers import find
 
 
@@ -18,11 +18,8 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     if any(x.name == "delete" for x in invocation.arguments):
         return (Decision.DENY, "Using the `-delete` argument with `find` is forbidden.")
 
-    for arg in [x for x in invocation.arguments if x.name == "output-file"]:
-        if arg.value is None:
-            raise ParseError(f"{arg.key} must have a value")
-        else:
-            references.append(Reference(access=Access.WRITE, text=arg.value, expansions=arg.expansions))
+    if any(x.name == "output-file" for x in invocation.arguments):
+        return (Decision.DENY, "Using `-fls`/`-fprint`/`-fprint0`/`-fprintf` with `find` is forbidden.")
 
     for arg in invocation.positionals:
         if arg.value and arg.value not in ("!", "(", ")"):
