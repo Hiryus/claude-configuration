@@ -784,6 +784,14 @@ def test_find_leading_flag_does_not_hide_the_root():
     # §6.4: a leading flag (-L) must not short-circuit before the search root is reached.
     assert run(command="find -L ~/.ssh -name id_rsa") == "deny"
 
+@pytest.mark.parametrize("cmd", ["find . -newer /etc/passwd", "find . -size +1M", "find . -newer id_rsa"])
+def test_find_expression_value_not_treated_as_root(cmd):
+    # Rule 2.10 (#25): only the leading search roots are path-checked; expression values (-newer FILE, -size +1M) are not.
+    assert run(command=cmd) == "allow"
+
+def test_find_root_before_expression_still_checked():
+    assert run(command="find /etc -newer x") == "ask"
+
 # ============================================================================
 # git --output / -o
 # ============================================================================

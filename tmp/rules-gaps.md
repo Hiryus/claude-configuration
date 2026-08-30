@@ -49,7 +49,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 ## 2.10 Specific find rules
 
 24. [x] Rule: `-fls`, `-fprint`, `-fprint0` and `-fprintf` are denied. Current: allowed. The first three only get their target path-checked; `-fprintf` is not looked at at all, target included.
-25. [ ] Rule: only the leading search roots are path-checked. Current: every non-flag word is, so expression values (`-newer FILE`, `-size +1M`, ...) are checked as if they were search roots.
+25. [x] Rule: only the leading search roots are path-checked. Current: every non-flag word is, so expression values (`-newer FILE`, `-size +1M`, ...) are checked as if they were search roots.
 
 
 ## 2.13 / 3. Containers

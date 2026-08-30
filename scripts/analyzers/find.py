@@ -21,8 +21,13 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     if any(x.name == "output-file" for x in invocation.arguments):
         return (Decision.DENY, "Using `-fls`/`-fprint`/`-fprint0`/`-fprintf` with `find` is forbidden.")
 
-    for arg in invocation.positionals:
-        if arg.value and arg.value not in ("!", "(", ")"):
-            references.append(Reference(access=Access.READ, text=arg.value, expansions=arg.expansions))
+    leading_flags = ("debug", "optimization", "symlinks-following")
+    for arg in invocation.arguments:
+        if arg.positional:
+            if arg.value and arg.value not in ("!", "(", ")"):
+                references.append(Reference(access=Access.READ, text=arg.value, expansions=arg.expansions))
+        elif arg.name not in leading_flags:
+            # The expression has started: later words are predicate values (`-newer FILE`, `-size +1M`), never roots.
+            break
 
     return check_access(command, references, context)
