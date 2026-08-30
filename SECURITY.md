@@ -1,4 +1,4 @@
-This file describes the rules implemented to secure the agent's tool calls, especially the `Edit`, `Read`, `Write`, and `Bash` ones.
+This file describes the rules implemented to secure the agent's tool calls, especially the `Edit`, `Read`, `Write`, `Grep`, and `Bash` ones.
 
 
 ## Threat model

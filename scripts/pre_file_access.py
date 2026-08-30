@@ -1,5 +1,5 @@
 """
-Hook pre-processing file access (`Edit` | `Read` | `Write`) to enforce the security rules.
+Hook pre-processing file access (`Edit` | `Read` | `Write` | `Grep`) to enforce the security rules.
 """
 
 import json
@@ -13,7 +13,7 @@ from models.parsing import Access, ContextError, Reference
 
 
 def analyze(file_path:str, context:Context) -> tuple[Decision, str]:
-    access = Access.READ if context.tool_name.lower() == "read" else Access.WRITE
+    access = Access.READ if context.tool_name.lower() in ("read", "grep") else Access.WRITE
     decision, reason = check_file_rules([Reference(access=access, text=file_path)], context)
     if decision is Decision.ALLOW:
         return (decision, f"Accessing '{file_path}' in {context.mode.value} mode is allowed.")
@@ -21,7 +21,12 @@ def analyze(file_path:str, context:Context) -> tuple[Decision, str]:
 
 
 def main(input_data:dict, environ:Mapping[str, str] = os.environ) -> str:
-    file_path:str = input_data.get("tool_input", {}).get("file_path")
+    tool_input = input_data.get("tool_input", {})
+    # `Grep` names its search location `path` (optional, defaults to the cwd) rather than `file_path`.
+    if input_data.get("tool_name", "").lower() == "grep":
+        file_path:str = tool_input.get("path") or "."
+    else:
+        file_path:str = tool_input.get("file_path")
     if file_path is None:
         return format_response(Decision.DENY.value, "No file_path given.")
 

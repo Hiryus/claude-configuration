@@ -33,10 +33,10 @@ Personal configuration and scripts for claude code.
 ## How it works
 
 The claude configuration define two hooks:
-- `scripts/pre_file_access.py` for the `Edit|Read|Write` tools,
+- `scripts/pre_file_access.py` for the `Edit|Read|Write|Grep` tools,
 - `scripts/pre_shell.py` for the `Bash` tools.
 
-Any direct access to a file is thus validated by the `pre_file_access.py` script and any bash command is validated by the `pre_shell.py` script implemented based on [specifications rules](SECURITY.md).
+Any direct access to a file (via `Edit`, `Read`, `Write`, or `Grep`) is thus validated by the `pre_file_access.py` script and any bash command is validated by the `pre_shell.py` script implemented based on [specifications rules](SECURITY.md).
 
 Analyzing bash commands requires parsing them, which is not exactly easy and not 100% secure due to the complexity and commands updates.
 However, it a good compromise between security and usability. A full sandbox would be better, but would require to include git credentials in the sandbox and is not easy to integrate with claude code while keeping good interractivity with the user.

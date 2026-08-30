@@ -353,3 +353,41 @@ def test_doublestar_does_not_recurse_into_secret_two_levels_deep(tmp_path):
 
 def test_doublestar_in_missing_subdirectory_allowed(tmp_path):
     assert run(file_path=str(tmp_path / "missing" / "**" / "*.py"), cwd=str(tmp_path)) == "allow"
+
+# ============================================================================
+# Grep tool (gap #44: it names its search location `path`, not `file_path`)
+# ============================================================================
+
+def grep_output(path:str|None, cwd=ROOT, mode="default", project_root=SAME_AS_CWD) -> dict:
+    tool_input = {"pattern": "secret"} if path is None else {"pattern": "secret", "path": path}
+    result = main({
+        "cwd": cwd,
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Grep",
+        "permission_mode": mode,
+        "tool_input": tool_input,
+    }, environ=environment(cwd, project_root))
+    return json.loads(result).get("hookSpecificOutput", {})
+
+def grep_run(path:str|None, cwd=ROOT, mode="default", project_root=SAME_AS_CWD) -> str|None:
+    return grep_output(path, cwd, mode, project_root).get("permissionDecision")
+
+def test_grep_secret_file_path_denied():
+    assert grep_run("/proj/.env") == "deny"
+
+def test_grep_in_project_path_allowed():
+    assert grep_run("/proj/src") == "allow"
+
+def test_grep_outside_project_path_asks():
+    assert grep_run("/other/dir") == "ask"
+
+def test_grep_without_path_defaults_to_cwd(tmp_path):
+    # No `path` given: the real Grep tool searches the cwd, so the hook must check the cwd itself.
+    assert grep_run(None, cwd=str(tmp_path)) == "allow"
+
+def test_grep_without_path_denied_when_cwd_is_outside_project():
+    assert grep_run(None, cwd="/other/dir", project_root="/proj") == "ask"
+
+def test_grep_is_never_treated_as_a_write(tmp_path):
+    # Rule "Modes": a write in manual mode would ask; Grep only reads, so it must stay allowed.
+    assert grep_run(str(tmp_path), cwd=str(tmp_path), mode="default") == "allow"

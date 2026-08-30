@@ -35,7 +35,7 @@
     ],
     "disableBypassPermissionsMode": "disable"
   },
-  "model": "opus",
+  "model": "sonnet",
   "disableClaudeAiConnectors": true,
   "hooks": {
     "PreToolUse": [
@@ -49,7 +49,7 @@
         ]
       },
       {
-        "matcher": "Edit|Read|Write",
+        "matcher": "Edit|Grep|Read|Write",
         "hooks": [
           {
             "type": "command",
