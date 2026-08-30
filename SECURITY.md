@@ -59,7 +59,7 @@ Then **ask** rules take precedence over **allow** ones.
 
 The agent is **denied** to **access** (read and write) files containing credentials, whatever their location, including:
 - Files with the `.pem`/`.key`/`.p12`/`.pfx`/`.keystore`/`.jks`, `.htpasswd`/`.netrc`/`.npmrc`/`.pgpass` extensions/names,
-- The dotenv (`.env`/`.env.local`/`.env.production`) and usual ssh key (`id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`) files,
+- The dotenv (`.env`/`.env.local`/`.env.production`/...) and usual ssh key (`id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`) files,
 - The harness credentials files (`.credentials.json` holding the OAuth tokens, `.claude.json` holding the account identity and the MCP servers environment, and `~/.claude/sessions/*.key` files),
 - Any files under `.ssh/`.
 
@@ -230,6 +230,8 @@ The `git add`, `git mv`, and `git rm` commands are **allowed** as long as they r
 
 The `git commit` command is **allowed**, but [file rules](#1-file-rules) apply when specifying files (including with the `--only`/`-o` flag).
 
+The `git fetch` command is always **allowed**.
+
 The `git reset` command is **allowed** in **edit** and **audto** as long as the option `--hard` is not used and it respect the the [file rules](#1-file-rules).
 
 The `git branch`, `git checkout`, and `git switch` commands are:
@@ -302,9 +304,12 @@ The following global `compose` options (`docker compose -f compose.yml up`) are 
 
 Any other global option (including `--project-directory`) is an **ask**.
 
+The client/daemon-retargeting flags (`--config`, `--context`, `--host`/`-H`, `--tls`, `--tlscacert`, `--tlscert`, `--tlskey`, `--tlsverify`) are an **ask** too, for both `docker` and `docker compose`: they can point the client at a different daemon or TLS identity than the local one every other rule in this section assumes.
+
 **Reason**: These options are needed to target the right compose project, and their files can be verified.
 - `--dry-run` only simulates the command, so it is usually safe and can never do more than the "no dry-run" command anyway.
 - `--project-directory` is excluded because it re-anchors every relative path of the compose file (build contexts, volumes).
+- The daemon-retargeting flags are asked because every rule in this section assumes commands run against the local daemon; pointing at a different one would let an otherwise-allowed command (`docker run`, `docker compose up`, ...) act on a host outside this sandbox.
 
 ### 3.2. Status commands
 
@@ -429,7 +434,7 @@ NB: everything after the container/service/image name is the container's own arg
 
 ### 3.4. Building an image
 
-The `docker build` and `docker buildx` commands are **allowed**, as long as they only reference files inside the project, and with the following options (any other option is **ask**):
+The `docker build` and `docker buildx` commands are **allowed**, as long as they only reference files respecting the [file rules](#1-file-rules), and with the following options (any other option is **ask**):
 - `--build-arg`,
 - `--build-context` (path is subject to the [file rules](#1-file-rules)),
 - `--cache-from` (path is subject to the [file rules](#1-file-rules)),
