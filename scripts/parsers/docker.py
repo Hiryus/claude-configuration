@@ -1,6 +1,9 @@
 from models.grammar import CommandSyntax, Flag
-from models.parsing import CommandLine, Invocation
+from models.parsing import CommandLine, Invocation, Token
 from parsers import arguments
+
+# The legacy standalone binaries, treated as `docker compose`/`podman compose` (SECURITY.md §3).
+LEGACY_COMPOSE_BASES = ("docker-compose", "podman-compose")
 
 BAKE_FLAGS = [
     Flag(name="allow", keys=["--allow"], value_required=True),
@@ -2001,4 +2004,14 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
 ])
 
 def parse(command_line:CommandLine) -> Invocation:
+    if command_line.base in LEGACY_COMPOSE_BASES:
+        # No `compose` verb on the line: synthesize it so the walk still inherits
+        # the base flags and cmd_parts still starts with "docker" for the ALLOWED_COMMANDS matches.
+        command_line = CommandLine(
+            program=command_line.program,
+            args=[Token(text="compose"), *command_line.args],
+            assignments=command_line.assignments,
+            redirects=command_line.redirects,
+            environment=command_line.environment,
+        )
     return arguments.parse(command_line=command_line, syntax=GRAMMAR)

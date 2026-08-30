@@ -12,6 +12,7 @@ from generic import check_access, check_mode_rules, format_response, worst
 from models.analyzer import Context, Decision
 from models.parsing import Access, CommandLine, ContextError, ParseError, Reference
 from parsers import bash
+from parsers.docker import LEGACY_COMPOSE_BASES
 from utils.format import describe_refs
 
 # ============================================================================
@@ -54,7 +55,7 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
     if command.base in ["echo", "printf", "pwd", "sleep", "tr"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
-    if command.base == "docker":
+    if command.base in ("docker", "podman", *LEGACY_COMPOSE_BASES):
         return docker.validate(command, context)
 
     if command.base == "find":

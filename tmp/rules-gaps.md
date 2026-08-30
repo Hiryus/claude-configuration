@@ -2,12 +2,6 @@
 
 Gaps between `rules.md` and the current behavior. Rules that are correctly implemented are omitted, so the numbering has holes.
 
-**Loosening the sandbox** (the rest are stricter than the rule, or wrong in a harmless direction):
-- **2.13/3.x** (#28) — `podman` is unknown, so `podman run --privileged` asks instead of denying.
-- **2.8** (#38) — a path glued to a short flag (`file -f.env`, `grep -f.env pat`) is neither consumed as a value nor left in the operands, so it is never checked at all.
-- **3.3** (#39) — `--volumes-from`'s `:ro`/`:rw` suffix is never checked, so a volume the running container mounted read-only can be re-mounted `:rw`.
-- **3.3** (#40) — `docker volume create --opt device=` goes through the general write rules (which allow `/tmp`), not the stricter "project directory only" `volume create` clause.
-
 
 ## 2.8 Read-only binaries
 
@@ -18,7 +12,6 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 ## 2.13 / 3. Containers
 
-28. [ ] Rule: every podman equivalent is allowed or denied alongside its docker counterpart, and the legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`. Current: none of the three is recognized, so they all fall through to **ask** — including the calls that must be denied, such as `podman run --privileged`.
 29. [ ] Rule (3.3): `--user root`/`-u 0` is denied. Current: denied when the value is a separate word, allowed through when it is glued to the flag (`-u0`).
 31. [ ] Rule (3.3): every mount source is checked. Current: a spec that repeats `source=`/`src=` only has one of the two checked, a bind-backed named volume declared through `--volume-opt device=` is not checked, and a spec carrying both `ro` and a contradicting `readonly` is read as read-only.
 32. [ ] Rule (3.3): the container's own argv is not read as docker options. Current: dropped at the first operand, but only when every option before it is tabled and none swallowed a flag-shaped value — otherwise an option may be read as the operand, so the whole line stays under option parsing (`docker run -u0 alpine app --privileged` is still denied). `docker service create` is not covered: it takes an argv too, but is an ask by default.

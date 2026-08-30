@@ -1195,6 +1195,11 @@ def test_shell_nesting_commands_denied(cmd):
     "docker compose logs web",
     "docker compose version",
     "docker compose -f compose.yml config",
+    "podman ps",
+    "podman container ls",
+    "podman images",
+    "podman --version",
+    "podman compose ps",
 ])
 def test_container_status_allowed(cmd):
     assert run(command=cmd) == "allow"
@@ -1221,6 +1226,9 @@ def test_container_status_allowed(cmd):
     "docker image prune",
     "docker pull alpine",
     "docker rmi alpine",
+    "podman stop web",
+    "podman rm web",
+    "podman pull alpine",
 ])
 def test_container_manage_allowed(cmd):
     assert run(command=cmd) == "allow"
@@ -1243,9 +1251,15 @@ def test_compose_follow_flag_is_not_a_file():
     assert run(command="docker compose logs -f web") == "allow"
     assert run(command="docker compose rm -f web") == "allow"
 
-@pytest.mark.xfail(reason="rule 3: the legacy `docker-compose` binary is not aliased to `docker compose` in pre_shell.check_command", strict=True)
 def test_legacy_compose_binary_allowed():
     assert run(command="docker-compose up -d") == "allow"
+    assert run(command="podman-compose up -d") == "allow"
+
+def test_legacy_compose_binary_inherits_the_compose_grammar():
+    # The synthesized `compose` token must still gate options the same way the real verb does:
+    # the global `--env-file` is checked, and an unrecognized global option asks.
+    assert run(command="docker-compose --env-file .env up") == "deny"
+    assert run(command="podman-compose --project-directory /etc up") == "ask"
 
 # --- Escaping the sandbox ---------------------------------------------------
 
@@ -1261,6 +1275,9 @@ def test_legacy_compose_binary_allowed():
     "docker compose up --privileged",
     "docker rm -v --privileged web",
     "docker compose down -v --privileged",
+    "podman run --privileged alpine",
+    "podman run -u 0 alpine",
+    "docker-compose up --privileged",
 ])
 def test_container_escape_options_denied(cmd):
     assert run(command=cmd) == "deny"
