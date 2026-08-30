@@ -1373,6 +1373,21 @@ def test_negative_value_before_the_operand_keeps_the_strip():
     # is dropped. Reading it as flag-shaped would put the whole line back under option parsing.
     assert run(command="docker run --rm --stop-timeout -1 alpine mytool --privileged") == "allow"
 
+def test_service_create_argv_is_stripped_before_the_root_user_check():
+    # Without the strip, the tail's `-u root` reads as `service create`'s own tabled `--user` flag
+    # and wrongly denies a line where "root" never names the container's user.
+    assert run(command="docker service create redis app -u root") == "ask"
+
+def test_service_create_root_user_before_the_image_is_still_denied():
+    # A `-u root` before the operand is not the container's argv: it survives the strip and must
+    # still be caught by the root-user check.
+    assert run(command="docker service create -u root redis") == "deny"
+
+def test_service_create_stays_an_ask_even_with_clean_options():
+    # §3.3 never lists `service create` among the allowed commands: unlike `run`/`exec`/`create`,
+    # it must not fall into the opaque-tail branch that can return ALLOW.
+    assert run(command="docker service create --name x redis") == "ask"
+
 @pytest.mark.parametrize("cmd", [
     "docker run --rm -v /etc:/etc alpine",
     "docker run --rm --mount type=bind,source=/etc,target=/etc alpine",

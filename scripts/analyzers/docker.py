@@ -366,6 +366,11 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
         else:
             return (Decision.ALLOW, "The `docker --version` command is allowed.")
 
+    elif invocation.command == "docker service create":
+        # Takes an image/argv tail like `run`/`exec`, so it needs the same stripping, but §3.3 never
+        # lists it among the allowed commands: it stays an ask regardless of which options it uses.
+        reasons.append(f"The `{invocation.command}` command is not allowed by default.")
+
     elif invocation.opaque_tail:
         mounts, unverified = parse_mount_ref(invocation)
         allowed = RUN_ALLOWED_FLAGS + MOUNT_FLAGS + (COMPOSE_ALLOWED_FLAGS if "compose" in invocation.cmd_parts else [])

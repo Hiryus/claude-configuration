@@ -1676,7 +1676,7 @@ GRAMMAR = CommandSyntax(aliases=["docker"], flags=BASE_FLAGS, subcommands=[
             Flag(name="read-only", keys=["--read-only"], value_required=False),
             Flag(name="tty", keys=["-t", "--tty"], value_required=False),
             Flag(name="with-registry-auth", keys=["--with-registry-auth"], value_required=False),
-        ]),
+        ], opaque_tail=True),
         CommandSyntax(aliases=["inspect"], flags=[
             Flag(name="format", keys=["-f", "--format"], value_required=True),
             Flag(name="help", keys=["--help"], value_required=False),
