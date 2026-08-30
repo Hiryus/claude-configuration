@@ -11,8 +11,8 @@ GRAMMAR = CommandSyntax(
         Flag(name="version", keys=["--version"], value_required=False),
     ],
     subcommands=[
-        # The read-only verbs carry no table of their own: they only need a node so the
-        # walk records them in `path` (that is what the analyzer allow-lists against).
+        # None of these need a table of their own: they only need a node so the walk records
+        # them in `path` (that is what the analyzer allow-lists and path-checks against).
         CommandSyntax(aliases=["add"]),
         CommandSyntax(aliases=["check-ignore"]),
         CommandSyntax(aliases=["diff"]),
@@ -24,8 +24,10 @@ GRAMMAR = CommandSyntax(
         CommandSyntax(aliases=["ls-tree"]),
         CommandSyntax(aliases=["merge-base"]),
         CommandSyntax(aliases=["merge-tree"]),
+        CommandSyntax(aliases=["mv"]),
         CommandSyntax(aliases=["rev-list"]),
         CommandSyntax(aliases=["rev-parse"]),
+        CommandSyntax(aliases=["rm"]),
         CommandSyntax(aliases=["show"]),
         CommandSyntax(aliases=["stash"]),
         CommandSyntax(aliases=["status"]),

@@ -14,7 +14,9 @@ ALLOWED_SUBCOMMANDS = [
     "ls-files",
     "ls-tree",
     "merge-base",
+    "mv",
     "rev-parse",
+    "rm",
     "show",
     "status",
 ]
@@ -60,10 +62,10 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     `git` is allow-listed per subcommand.
     - The `-C`, `--git-dir`, `-c` flags and a `GIT_DIR` variable are refused wherever they sit.
     - The history-rewriting subcommands need the user validation,
-    - Any path git writes (`--output`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
+    - Any path git writes (`--output`, `mv`/`rm`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
 
     An untabled flag is NOT an ASK here: git has ~150 subcommands, so nearly every real line carries one (`-m`, `--list`, `-s`, ...).
-    Such a flag stays visible as an operand, which is exactly what `add`/`commit` path-check.
+    Such a flag stays visible as an operand, which is exactly what `add`/`commit`/`mv`/`rm` path-check.
     The `branch` and `config` verbs deviate: their tables list every read-only spelling, so anything untabled is a write and asks.
     """
     invocation = git.parse(command)
@@ -117,6 +119,8 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     references = invocation.references(Access.WRITE, "output")
     if verb in ["add", "commit"]:
         references += [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]
+    if verb in ["mv", "rm"]:
+        references += [Reference(access=Access.WRITE, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]
     if any(references):
         decision, reason = check_access(command, references, context)
         if decision is not Decision.ALLOW:

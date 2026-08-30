@@ -35,7 +35,7 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 17. [ ] Rule: `git checkout` and `git switch` are allowed in **edit**/**auto** (**ask** in **manual**) — both to switch to an existing branch and, with `-b`/`-c`, to create one — subject to the file rules for the file-restoring form (`git checkout -- <paths>`). Current: **ask** in every mode, and their pathspecs are never path-checked.
 18. [x] Rule: `git reset` is allowed in **edit**/**auto** (**ask** in **manual**) as long as `--hard` is not used, subject to the file rules. Current: **ask** in every mode, and its pathspecs are never path-checked.
-19. [ ] Rule: `git add`, `git mv`, and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
+19. [x] Rule: `git add`, `git mv`, and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
 
 
 ## 2.10 Specific find rules

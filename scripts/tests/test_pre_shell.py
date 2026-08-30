@@ -446,6 +446,24 @@ def test_git_reset_pathspec_secret_file_denied():
 def test_git_reset_pathspec_outside_project_asks():
     assert run(command="git reset -- /etc/passwd", mode="acceptEdits") == "ask"
 
+@pytest.mark.parametrize("cmd", ["git add foo.py", "git mv foo.py bar.py", "git rm foo.py"])
+def test_git_add_mv_rm_allowed_in_edit_and_auto_mode(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="bypassPermissions") == "allow"
+
+@pytest.mark.parametrize("cmd", ["git mv foo.py bar.py", "git rm foo.py", "git rm -r dir"])
+def test_git_mv_rm_write_asks_in_manual_mode(cmd):
+    # `mv`/`rm` write the working tree, so the manual-mode write rule (not `git`-specific) applies.
+    assert run(command=cmd, mode="default") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git mv foo.py /etc/bar.py", "git rm /etc/passwd"])
+def test_git_mv_rm_pathspec_outside_project_asks(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git mv ~/.ssh/id_rsa bar.py", "git rm ~/.ssh/id_rsa"])
+def test_git_mv_rm_pathspec_secret_file_denied(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "deny"
+
 @pytest.mark.parametrize("cmd", [
     "git remote",
     "git remote -v",
