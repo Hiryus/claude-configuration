@@ -418,7 +418,7 @@ Volumes can also be mounted with `--volume`/`-v`, `--mount`, and `--volumes-from
 - Directories allowed only in read must be mounted with a read-only option.
 - Volumes from other containers can also be mounted in read-only.
 
-The `docker volume create` command is **allowed** as long as it only references the project directory.
+The `docker volume create` command is **allowed** as long as it respects the [file rules](#1-file-rules) (volume creation is assumed to be a write operation).
 
 The `docker compose cp` and `docker container cp`/`docker cp` commands are **allowed** as long as they only reference files compatible with the [file rules](#1-file-rules).
 The container side of the copy (`service:/path`) is not checked: it is inside the sandbox.
