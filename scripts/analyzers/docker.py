@@ -141,6 +141,9 @@ MOUNT_FLAGS = ["mount", "volume", "volumes-from"]
 BUILD_COMMANDS = ["docker build", "docker builder build", "docker buildx build", "docker image build"]
 BUILD_READ_FLAGS = ["build-context", "cache-from", "file"]
 BUILD_WRITE_FLAGS = ["cache-to", "iidfile", "metadata-file", "output"]
+# Fields that always hold a local path in a structured `--cache-to`/`--cache-from`/`--output` value,
+# whatever their shape (`dest=.env` is a path just as much as `dest=./cache`).
+STRUCTURED_PATH_FIELDS = ["dest", "src"]
 BUILD_ALLOWED_FLAGS = BUILD_READ_FLAGS + BUILD_WRITE_FLAGS + ["build-arg", "help", "label", "no-cache", "no-cache-filter", "pull", "quiet", "resource", "tag", "target"]
 
 # Copying files in and out of a container.
@@ -291,9 +294,10 @@ def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
 
 def parse_opt_refs(invocation:Invocation, names:list[str], access:Access) -> list[Reference]:
     """
-    The local paths an option points at. A plain value is a path (`-f Dockerfile`); a structured one
-    only yields its path-looking fields, so `--cache-to type=registry,ref=x` references no file while
-    `--cache-to type=local,dest=./cache` does.
+    The local paths an option points at.
+    - A plain value is a path (`-f Dockerfile`)
+    - A structured one yields its known path fields (`dest`/`src`) whatever their shape, plus any other field that merely looks like a path,
+    so `--cache-to type=registry,ref=x` references no file, `--cache-to type=local,dest=./cache` and `--output type=local,dest=.env` both do.
 
     A value built from an expansion is referenced whole: the field the expansion landed in is unknown,
     and its text would not look like a path anyway (`--output dest=$X`).
@@ -305,7 +309,7 @@ def parse_opt_refs(invocation:Invocation, names:list[str], access:Access) -> lis
         if reference.dynamic or "=" not in value:
             references.append(reference)
         else:
-            references.extend(Reference(access=access, text=x) for values in split_fields(value).values() for x in values if is_path(x))
+            references.extend(Reference(access=access, text=x) for key, values in split_fields(value).items() for x in values if key in ["dest", "src"] or is_path(x))
     return references
 
 

@@ -1541,7 +1541,6 @@ def test_container_build_secret_paths_denied(cmd):
     # A bare build path is cwd-relative, not a named volume: it must be vetted.
     assert run(command=cmd) == "deny"
 
-@pytest.mark.xfail(reason="parse_opt_paths() keeps only the is_path() fields of a structured value, so an unanchored `dest=` is dropped instead of vetted", strict=True)
 def test_container_build_structured_output_secret_denied():
     assert run(command="docker build -o type=local,dest=.env .") == "deny"
 
