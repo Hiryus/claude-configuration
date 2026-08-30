@@ -1301,7 +1301,7 @@ def test_escape_option_hidden_behind_an_unknown_option_still_denied():
     "docker run --rm -v .:/app -w /app alpine",
     "docker run --rm -v ./src:/app:ro alpine",
     "docker run --rm --mount type=bind,source=./src,target=/app alpine",
-    "docker run --rm --volumes-from other alpine",  # rule 3.3 allows volumes from other containers
+    "docker run --rm --volumes-from other:ro alpine",  # rule 3.3 allows volumes from other containers, read-only
     "docker run -d --name web -p 8080:80 -e FOO=bar --network mynet nginx",
     "docker run --rm --entrypoint /bin/sh alpine",
     "docker run --rm --tmpfs /scratch alpine",
@@ -1381,6 +1381,9 @@ def test_negative_value_before_the_operand_keeps_the_strip():
     "docker run --rm --cgroup-parent /x alpine",
     "docker run --rm -v $(pwd):/app alpine",
     "docker create -v /etc:/etc nginx",
+    "docker run --rm --volumes-from other alpine",       # unsuffixed: docker mounts read-write by default
+    "docker run --rm --volumes-from other:rw alpine",    # explicit read-write
+    "docker run --rm --volumes-from $(cat name) alpine", # dynamic name: mode can't be verified statically
 ])
 def test_container_run_asks(cmd):
     assert run(command=cmd) == "ask"

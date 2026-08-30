@@ -141,9 +141,6 @@ MOUNT_FLAGS = ["mount", "volume", "volumes-from"]
 BUILD_COMMANDS = ["docker build", "docker builder build", "docker buildx build", "docker image build"]
 BUILD_READ_FLAGS = ["build-context", "cache-from", "file"]
 BUILD_WRITE_FLAGS = ["cache-to", "iidfile", "metadata-file", "output"]
-# Fields that always hold a local path in a structured `--cache-to`/`--cache-from`/`--output` value,
-# whatever their shape (`dest=.env` is a path just as much as `dest=./cache`).
-STRUCTURED_PATH_FIELDS = ["dest", "src"]
 BUILD_ALLOWED_FLAGS = BUILD_READ_FLAGS + BUILD_WRITE_FLAGS + ["build-arg", "help", "label", "no-cache", "no-cache-filter", "pull", "quiet", "resource", "tag", "target"]
 
 # Copying files in and out of a container.
@@ -233,7 +230,8 @@ def parse_copy_ref(invocation:Invocation) -> list[Reference]:
 def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
     """
     The host paths a container mounts, plus the named volumes that cannot be resolved: those are not the project directory, so they need validation.
-    The volumes from other containers (`--volumes-from`) are allowed.
+    The volumes from other containers (`--volumes-from`) are checked separately by `parse_volumes_from_ref`,
+    since what they mount is unknowable statically and only their read/write mode is on the command line.
 
     A spec built from an expansion is referenced whole, before any splitting: `-v $SPEC` has no
     separator for `split_mount` to find and `--mount $SPEC` no `source=` field, so the structural
@@ -290,6 +288,20 @@ def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
                 unverified.append(spec)
 
     return (references, unverified)
+
+
+def parse_volumes_from_ref(invocation:Invocation) -> list[str]:
+    """
+    Return the volumes mounted from another container in write mode (or uncheckable statically)
+    Volumes mounted readonly are allowed .
+    """
+    writable_mounts = []
+    for arg in invocation.values("volumes-from"):
+        spec:str = arg.value or ""
+        reference = Reference(access=Access.WRITE, text=(arg.value or ""), expansions=arg.expansions)
+        if reference.dynamic or split_mount(arg.value or "")[-1:] != ["ro"]:
+            writable_mounts.append(spec)
+    return writable_mounts
 
 
 def parse_opt_refs(invocation:Invocation, names:list[str], access:Access) -> list[Reference]:
@@ -361,6 +373,8 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
             reasons.append(f"`{invocation.command}` requires the user validation when using the {disallowed} options.")
         if unverified:
             reasons.append(f"`{invocation.command}` mounts {format_references(unverified)}: only the project directory can be mounted by default.")
+        if rw_volumes := parse_volumes_from_ref(invocation):
+            reasons.append(f"`{invocation.command}` mounts {format_references(rw_volumes)} from another container: only read-only is allowed by default.")
         references += mounts
 
     elif invocation.command in BUILD_COMMANDS:
