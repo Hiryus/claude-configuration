@@ -80,28 +80,30 @@ def parse_flag(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> l
 def parse_glued_args(token:Token, tokens:list[Token], potential_flags:list[Flag]) -> list[Argument] | None:
     """
     Attempt to split a single-dash token like "-it" into its component short flags ("-i", "-t").
-    Only succeeds if every character resolves to a known flag and no non-terminal flag in the group requires a value.
-    Only the last flag in the group may consume a value, matching typical getopt-style semantics).
-    Returns None if the token can't be cleanly split.
+    Walks the letters left to right: a boolean flag continues the walk, but a value-required flag ends it immediately, getopt-style,
+    taking whatever remains of the token as its glued value (ex: "-u0" -> "-u" "0", "-f.env" -> "-f" ".env") instead of trying to resolve it as more flags.
+    Only the very last letter may pull its value from the next word instead (ex: "-uroot" vs "-u root").
+    Returns None if some letter matches no known flag.
     """
     key = token.text.partition("=")[0]
-
-    resolved:list[Flag] = []
-    for letter in key[1:] : # drop the leading "-"
-        if flag := next((x for x in potential_flags if f"-{letter}" in x.keys), None):
-            resolved.append(flag)
-        else: # no flag matches the current letter
-            return None
-
-    # Check if any of the arguments requires a value except the last one.
-    # A flag that requires a value can't sit in the middle of a glued group (ex: "-if" where -i needs a value would be ambiguous) — bail out.
-    if any(x.value_required for x in resolved[:-1]):
-        return None
+    letters = key[1:]  # drop the leading "-"
 
     results:list[Argument] = []
-    last_index = len(resolved) - 1
-    for i, flag in enumerate(resolved):
-        if i != last_index:
+    last_index = len(letters) - 1
+    for idx, letter in enumerate(letters):
+        flag = next((x for x in potential_flags if f"-{letter}" in x.keys), None)
+        if flag is None: # no flag matches the current letter
+            return None
+
+        if flag.value_required and idx != last_index:
+            # The rest of the token is this flag's value, glued directly: it is never re-walked as more letters.
+            # Sliced from `token.text`, not `letters`: `letters` is cut at the first "=" (so a whole flag spelled exactly, ex: "-e=x", still resolves at the top of `parse_flag`),
+            # but "=" carries no such meaning here -- a mid-cluster glued value keeps it verbatim (ex: "-eFOO=bar" -> value "FOO=bar").
+            value = Token(text=token.text[idx + 2:], expansions=token.expansions)
+            results.append(build_argument(key=flag.keys[0], name=flag.name, token=token, value=value))
+            return results
+
+        if idx != last_index:
             results.append(Argument(key=flag.keys[0], name=flag.name, value=None, expansions=token.expansions))
         else:
             value = parse_value(key=flag.name, token=token, tokens=tokens, value_required=flag.value_required, value_count=flag.value_count)

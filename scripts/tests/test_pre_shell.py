@@ -208,7 +208,6 @@ def test_jq_filter_not_read_as_a_path(cmd):
 def test_jq_filter_from_file_makes_every_operand_a_file():
     assert run(command="jq -f prog.jq .env") == "deny"
 
-@pytest.mark.xfail(reason="parse_glued_args() requires every letter of a cluster to be a flag, so a path glued to a short flag (`-f.env`) is neither consumed as a value nor left in the operands: it is never checked at all (same cause as the docker `-u0` gap)", strict=True)
 @pytest.mark.parametrize("cmd", [
     "file -f.env",
     "diff -X.env a.txt b.txt",
@@ -1282,7 +1281,6 @@ def test_legacy_compose_binary_inherits_the_compose_grammar():
 def test_container_escape_options_denied(cmd):
     assert run(command=cmd) == "deny"
 
-@pytest.mark.xfail(reason="parse_glued_args() requires every letter of a cluster to be a flag, so a value glued to a short flag (`-u0` = `-u 0`) is left untabled", strict=True)
 def test_glued_root_user_denied():
     assert run(command="docker run -u0 alpine") == "deny"
 
@@ -1348,20 +1346,22 @@ def test_container_argv_options_are_not_checked(cmd):
 def test_opaque_tail_flag_needing_a_value_does_not_crash_the_parse(cmd):
     assert run(command=cmd) == "allow"
 
-def test_opaque_tail_flag_needing_a_value_still_denies_with_an_untrusted_boundary():
-    # `-u0` is untabled, so the boundary is untrusted and the whole line stays under option parsing
+def test_opaque_tail_flag_needing_a_value_does_not_crash_with_an_untrusted_boundary():
+    # `-x0` is untabled, so the boundary is untrusted and the whole line stays under option parsing
     # (see test_untabled_option_before_the_operand_disables_the_strip); the trailing `-v` -- which
-    # would raise on a trusted boundary -- is still caught, but only as an unknown, disallowed option.
-    assert run(command="docker run -u0 -v ./certs/server.key:/k alpine cmd -v") == "deny"
+    # would raise on a trusted boundary -- is still caught, but only as an unknown, disallowed option:
+    # this asks rather than crashing or silently allowing.
+    assert run(command="docker run -x0 alpine cmd -v") == "ask"
 
 def test_container_argv_does_not_hide_a_docker_option():
     # A space-separated value may not move the boundary: `always` is `--pull`'s, not the image.
     assert run(command="docker run --rm --pull always -v /etc:/etc alpine ls") == "ask"
 
 def test_untabled_option_before_the_operand_disables_the_strip():
-    # `-u0` is untabled, so it is not paired with its value: `alpine` may be that value rather than
-    # the image. The boundary is unknown, so the whole line stays under option parsing.
-    assert run(command="docker run -u0 -v ./certs/server.key:/k alpine cmd") == "deny"
+    # `-x0` is untabled, so it is not paired with its value: `alpine` may be that value rather than
+    # the image. The boundary is unknown, so the whole line stays under option parsing, and the
+    # `--privileged` meant for the container's own argv is read as docker's own option instead.
+    assert run(command="docker run -x0 alpine app --privileged") == "deny"
 
 def test_flag_shaped_value_before_the_operand_disables_the_strip():
     # `--name` swallows `-v`, so `./x:/y` reads as the image -- docker reads it the same way, but
