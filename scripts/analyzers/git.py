@@ -60,7 +60,7 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     `git` is allow-listed per subcommand.
     - The `-C`, `--git-dir`, `-c` flags and a `GIT_DIR` variable are refused wherever they sit.
     - The history-rewriting subcommands need the user validation,
-    - Any path git writes (`--output`) or stages (`add`/`commit`) goes through check_access first.
+    - Any path git writes (`--output`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
 
     An untabled flag is NOT an ASK here: git has ~150 subcommands, so nearly every real line carries one (`-m`, `--list`, `-s`, ...).
     Such a flag stays visible as an operand, which is exactly what `add`/`commit` path-check.
@@ -97,9 +97,17 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
             return (Decision.DENY, "`git push --force` is forbidden by the security policy: only the user is allowed to change history.")
         return (Decision.ASK, "`git push` requires the user validation.")
 
-    # `--hard` throws away the working tree with no object left to recover it from, so it is denied like `push --force`.
-    if verb == "reset" and any(x.name == "hard" for x in invocation.options):
-        return (Decision.DENY, "`git reset --hard` is forbidden by the security policy: only the user is allowed to discard uncommitted work.")
+    if verb == "reset":
+        # `--hard` throws away the working tree with no object left to recover it from, so it is denied like `push --force`.
+        if any(x.name == "hard" for x in invocation.options):
+            return (Decision.DENY, "`git reset --hard` is forbidden by the security policy: only the user is allowed to discard uncommitted work.")
+        if any(references := [Reference(access=Access.READ, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]):
+            decision, reason = check_access(command, references, context)
+            if decision is not Decision.ALLOW:
+                return (decision, reason)
+        if context.mode == Mode.MANUAL:
+            return (Decision.ASK, "`git reset` requires the user validation.")
+        return (Decision.ALLOW, "`git reset` is allowed by default.")
 
     if verb == "remote":
         if invocation.command in ["git remote", "git remote get-url", "git remote show"]:

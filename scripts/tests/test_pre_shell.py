@@ -422,9 +422,13 @@ def test_git_push_force_denied(cmd):
     assert run(command=cmd) == "deny"
 
 @pytest.mark.parametrize("cmd", ["git reset", "git reset HEAD~1", "git reset --soft HEAD~1", "git reset --mixed"])
-def test_git_reset_asks(cmd):
-    # Only `--hard` is denied: the rest stays an ASK (2.9.4's allow is not implemented).
-    assert run(command=cmd) == "ask"
+def test_git_reset_asks_in_manual_mode(cmd):
+    assert run(command=cmd, mode="default") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git reset", "git reset HEAD~1", "git reset --soft HEAD~1", "git reset --mixed", "git reset -- foo.py"])
+def test_git_reset_allowed_in_edit_and_auto_mode(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="bypassPermissions") == "allow"
 
 @pytest.mark.parametrize("cmd", [
     "git reset --hard",
@@ -434,6 +438,13 @@ def test_git_reset_asks(cmd):
 ])
 def test_git_reset_hard_denied(cmd):
     assert run(command=cmd) == "deny"
+    assert run(command=cmd, mode="acceptEdits") == "deny"
+
+def test_git_reset_pathspec_secret_file_denied():
+    assert run(command="git reset -- ~/.ssh/id_rsa", mode="acceptEdits") == "deny"
+
+def test_git_reset_pathspec_outside_project_asks():
+    assert run(command="git reset -- /etc/passwd", mode="acceptEdits") == "ask"
 
 @pytest.mark.parametrize("cmd", [
     "git remote",

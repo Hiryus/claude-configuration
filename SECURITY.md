@@ -226,11 +226,18 @@ NB: Writing the git configuration files directly is forbidden by the [file rules
 
 #### 2.9.4. Usual commands
 
-The `git add`, `git checkout`, `git mv` `git rm`, and `git switch` commands are **allowed** as long as they respect the the [file rules](#1-file-rules).
+The `git add`, `git mv`, and `git rm` commands are **allowed** as long as they respect the the [file rules](#1-file-rules).
 
-The `git commit` command is **allowed**, except when the `--only`/`-o` option is supplied, in which case the [file rules](#1-file-rules) apply.
+The `git commit` command is **allowed**, but [file rules](#1-file-rules) apply when specifying files (including with the `--only`/`-o` flag).
 
-The `git reset` command is **allowed** as long as the option `--hard` is not used and it respect the the [file rules](#1-file-rules).
+The `git reset` command is **allowed** in **edit** and **audto** as long as the option `--hard` is not used and it respect the the [file rules](#1-file-rules).
+
+The `git branch`, `git checkout`, and `git switch` commands are:
+- Always **allowed** to read the branches status (ex: `--show-current`, `--merged`, `--contains`, `--list`, etc.),
+- **Allowed** to create a new branch in **edit** and **audto** modes (it's an **ask** in **manual** mode),
+- **Allowed** to switch branches in **edit** and **audto** modes (it's an **ask** in **manual** mode).
+
+Deleting a branch is not allowed by default and **ask**.
 
 **Reason**: The agent is allowed to update the project, and it is actually its main objective.
 These commands can update the files, but the history will always keep the previous contents (assuming they were committed).
@@ -238,7 +245,6 @@ These commands can update the files, but the history will always keep the previo
 #### 2.9.5. Read-only commands
 
 The following commands are **allowed**:
-- `git branch` with a fixed set of read-only flags (`--show-current`, `-v`, `--merged`, `--contains`, `--list`...).
 - `git remote` for read-only options (`git remote show`, `git remote get-url`, etc.).
 - `git check-ignore`, `git diff`, `git grep`, `git log`, `git ls-files`, `git ls-tree`, `git merge-base`, `git rev-parse`, `git show`, `git status`.
 

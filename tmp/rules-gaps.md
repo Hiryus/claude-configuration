@@ -33,17 +33,9 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 
 ## 2.9.4 Usual commands
 
-17. [ ] Rule: `git checkout` and `git switch` are allowed. Current: **ask**.
-18. [ ] Rule: `git reset` is allowed as long as `--hard` is not used. Current: **ask**.
-19. [ ] Rule: `git mv` and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
-20. [ ] Rule: `git add` is allowed. Current: its pathspecs are path-checked, so a pathspec outside the project asks.
-21. [ ] Rule: `git commit` is path-checked only when `--only`/`-o` is supplied. Current: its pathspecs are path-checked in every case.
-        Amplified by #36: `-m` is untabled, so it does not consume its value and the message lands in the positionals. A message that used to pass as an in-project filename now asks as soon as it holds an expansion (`git commit -m "$MSG"`).
-
-
-## 2.9.5 Read-only commands
-
-23. [ ] Rule: only a fixed set of read-only `git branch` flags is allowed; creating a branch is not listed, so it should **ask**. Current: `git branch <name>` is allowed in **edit** and **auto** modes.
+17. [ ] Rule: `git checkout` and `git switch` are allowed in **edit**/**auto** (**ask** in **manual**) — both to switch to an existing branch and, with `-b`/`-c`, to create one — subject to the file rules for the file-restoring form (`git checkout -- <paths>`). Current: **ask** in every mode, and their pathspecs are never path-checked.
+18. [x] Rule: `git reset` is allowed in **edit**/**auto** (**ask** in **manual**) as long as `--hard` is not used, subject to the file rules. Current: **ask** in every mode, and its pathspecs are never path-checked.
+19. [ ] Rule: `git add`, `git mv`, and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
 
 
 ## 2.10 Specific find rules
