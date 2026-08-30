@@ -631,7 +631,6 @@ def test_git_directory_flag_after_verb_denied():
 def test_git_commit_only_secret_path_denied():
     assert run(command="git commit -o ~/.ssh/id_rsa") == "deny"
 
-@pytest.mark.xfail(reason="rule 2.9.1: resolve_scope() was dropped, so CommandLine.environment is never filled; to be reintroduced", strict=True)
 def test_git_dir_env_propagated_from_earlier_statement_denied():
     # The propagated form, as opposed to the prefix form above --
     # closed by resolve_scope() filling CommandLine.environment.
@@ -640,12 +639,19 @@ def test_git_dir_env_propagated_from_earlier_statement_denied():
 def test_unrelated_propagated_assignment_does_not_leak_into_other_commands():
     assert run(command="FOO=bar; echo hi") == "allow"
 
-@pytest.mark.xfail(reason="rule 2.9.1: resolve_scope() was dropped, so CommandLine.environment is never filled; to be reintroduced", strict=True)
 def test_git_dir_env_via_export_denied():
-    # §2.4: `export` arrives as an ordinary argument word, not an assignment
+    # rule 2.4: `export` arrives as an ordinary argument word, not an assignment
     # node -- a DENY degrading to an ASK on the unrecognised `export` command
-    # is exactly the fail-open shape §5.1 exists to prevent.
+    # is exactly the fail-open shape resolve_scope() exists to prevent.
     assert run(command="export GIT_DIR=/etc; git log") == "deny"
+
+def test_git_dir_env_via_export_after_other_statement_denied():
+    assert run(command="echo hi; export GIT_DIR=/etc; git log") == "deny"
+
+def test_git_dir_env_exported_without_value_denied():
+    # `export GIT_DIR` (no `=`) exports an already-set shell variable: its value is
+    # unknown, but the name alone is enough to flag the later `git` call.
+    assert run(command="GIT_DIR=/etc; export GIT_DIR; git log") == "deny"
 
 # ============================================================================
 # find

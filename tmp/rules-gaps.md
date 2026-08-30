@@ -16,11 +16,6 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
         Pre-existing (the empty flag table behaved the same), and it spans `grep`, `docker` and `find` (`-O2`) alike, so fixing it belongs in `parse_flag` -- a prefix match against the tabled value-taking flags, taking the remainder as the glued value -- not in any single binary's grammar.
 
 
-## 2.9.1 Git directory
-
-12. [ ] Rule: defining `GIT_DIR` is denied. Current: denied only when it sits on the same command line as the `git` call; set by an earlier sub-command (`export GIT_DIR=... ; git log`) it goes through.
-
-
 ## 2.13 / 3. Containers
 
 28. [ ] Rule: every podman equivalent is allowed or denied alongside its docker counterpart, and the legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`. Current: none of the three is recognized, so they all fall through to **ask** — including the calls that must be denied, such as `podman run --privileged`.

@@ -110,6 +110,28 @@ def expansions_of(node:bashlex.ast.node|None) -> frozenset[Expansion]:
     return frozenset()
 
 
+def resolve_scope(commands:list[CommandLine]) -> list[CommandLine]:
+    """
+    Fill each command's `environment` with the variables tracked from the earlier commands
+    of the same prompt -- bare assignments (`FOO=bar`) and `export`, per rule 2.4: "tracked by
+    the hook for potential impact on other commands (ex: `GIT_DIR` read by the `git` command)".
+
+    `export NAME=value` arrives as a plain argument word, not an assignment node, so it is
+    split by hand; a bare `export NAME` (exporting an already-set shell variable) is tracked
+    with an empty value -- unknown, but the name still becomes visible to a later command.
+    """
+    tracked:dict[str, Token] = {}
+    for command in commands:
+        if not command.base:
+            for assignment in command.assignments:
+                tracked[assignment.name] = assignment.value
+        elif command.base == "export":
+            for arg in command.args:
+                name, sep, value = arg.text.partition("=")
+                tracked[name] = Token(text=value, expansions=arg.expansions) if sep else Token(text="")
+        command.environment = {**tracked, **command.environment}
+    return commands
+
 # ============================================================================
 # Entry point
 # ============================================================================
@@ -121,6 +143,6 @@ def parse(text:str) -> list[CommandLine]:
     """
     try:
         ast = bashlex.parse(text)
-        return [build_command(node) for node in collect(ast)]
+        return resolve_scope([build_command(node) for node in collect(ast)])
     except Exception as err:
         raise ParseError(f"unparseable command: {err}") from err
