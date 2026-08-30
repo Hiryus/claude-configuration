@@ -80,6 +80,12 @@ GRAMMAR = CommandSyntax(
         CommandSyntax(aliases=["commit"], flags=[
             Flag(name="only", keys=["-o", "--only"], value_required=False),
         ]),
+        CommandSyntax(aliases=["checkout"], flags=[
+            Flag(name="create-branch", keys=["-b", "-B"], value_required=True),
+        ]),
+        CommandSyntax(aliases=["switch"], flags=[
+            Flag(name="create-branch", keys=["-c", "-C"], value_required=True),
+        ]),
         CommandSyntax(aliases=["push"], flags=[
             Flag(name="force", keys=["--force", "-f"], value_required=False),
         ]),

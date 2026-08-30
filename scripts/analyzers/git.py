@@ -60,9 +60,10 @@ BRANCH_READONLY_ARGS = [
 def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     """
     `git` is allow-listed per subcommand.
-    - The `-C`, `--git-dir`, `-c` flags and a `GIT_DIR` variable are refused wherever they sit.
+    - The `-C`, `--git-dir`, `-c` flags and a `GIT_DIR` variable are refused wherever they sit --
+      except `switch -c`/`-C` (create branch), whose grammar node shadows the root one on purpose (see `parsers/git.py`).
     - The history-rewriting subcommands need the user validation,
-    - Any path git writes (`--output`, `mv`/`rm`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
+    - Any path git writes (`--output`, `mv`/`rm`/`checkout <pathspec>`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
 
     An untabled flag is NOT an ASK here: git has ~150 subcommands, so nearly every real line carries one (`-m`, `--list`, `-s`, ...).
     Such a flag stays visible as an operand, which is exactly what `add`/`commit`/`mv`/`rm` path-check.
@@ -93,6 +94,17 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
         if any(invocation.positionals) and context.mode == Mode.MANUAL:
             return (Decision.ASK, "`git branch` requires the user validation when creating a new branch.")
         return (Decision.ALLOW, "`git branch` is allowed by default.")
+
+    if verb in ["checkout", "switch"]:
+        # A `checkout` positional is ambiguous: `git checkout foo` switches to branch `foo` if one exists, but silently restores file `foo` from the index otherwise
+        # (the same write as the explicit `git checkout -- foo`, just without the `--`) So every positional is WRITE-checked unconditionally.
+        if verb == "checkout" and any(references := [Reference(access=Access.WRITE, text=x.value, expansions=x.expansions) for x in invocation.positionals if x.value is not None]):
+            decision, reason = check_access(command, references, context)
+            if decision is not Decision.ALLOW:
+                return (decision, reason)
+        if context.mode == Mode.MANUAL:
+            return (Decision.ASK, f"`{invocation.command}` requires the user validation.")
+        return (Decision.ALLOW, f"`{invocation.command}` is allowed by default.")
 
     if verb == "push":
         if any(x.name == "force" for x in invocation.options):

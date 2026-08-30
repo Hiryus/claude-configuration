@@ -411,6 +411,49 @@ def test_git_branch_flag_with_separate_value_asks(cmd):
     # apart from a branch name, so it falls back to the safe side.
     assert run(command=cmd) == "ask"
 
+@pytest.mark.parametrize("cmd", ["git checkout main", "git checkout -b feature", "git switch main", "git switch -c feature", "git switch -C feature"])
+def test_git_checkout_switch_asks_in_manual_mode(cmd):
+    assert run(command=cmd, mode="default") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git checkout main", "git checkout -b feature", "git switch main", "git switch -c feature", "git switch -C feature"])
+def test_git_checkout_switch_allowed_in_edit_and_auto_mode(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="bypassPermissions") == "allow"
+
+@pytest.mark.parametrize("cmd", ["git checkout -- foo.py", "git checkout HEAD~1 -- foo.py", "git checkout foo.py"])
+def test_git_checkout_pathspec_form_allowed_in_edit_mode(cmd):
+    # The file-restoring form is not gated by mode: it goes through the file rules like any other write.
+    # It does not need an explicit `--`: `git checkout foo.py` restores `foo.py` just the same when
+    # `foo.py` is not also a branch name, so every positional is checked whether `--` is spelled or not.
+    assert run(command=cmd, mode="acceptEdits") == "allow"
+
+@pytest.mark.parametrize("cmd", ["git checkout -- foo.py", "git checkout foo.py"])
+def test_git_checkout_pathspec_form_write_asks_in_manual_mode(cmd):
+    assert run(command=cmd, mode="default") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git checkout -- /etc/passwd", "git checkout /etc/passwd"])
+def test_git_checkout_pathspec_outside_project_asks(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "ask"
+
+@pytest.mark.parametrize("cmd", ["git checkout -- ~/.ssh/id_rsa", "git checkout ~/.ssh/id_rsa", "git checkout .env"])
+def test_git_checkout_pathspec_secret_file_denied(cmd):
+    assert run(command=cmd, mode="acceptEdits") == "deny"
+
+def test_git_checkout_branch_creation_value_not_path_checked():
+    # `-b`/`-B` consume the new branch's name as their own flag value, so it never lands in
+    # `positionals` and is never mistaken for a pathspec (a secret-looking branch name still allows).
+    assert run(command="git checkout -b .env", mode="acceptEdits") == "allow"
+
+def test_git_checkout_force_create_start_point_is_path_checked():
+    # `-B <new-branch> <start-point>`: the branch name is consumed by `-B`, but the start-point is an
+    # ordinary positional and gets the same over-inclusive treatment as `git reset`'s treeish operand.
+    assert run(command="git checkout -B feature ~/.ssh/id_rsa", mode="acceptEdits") == "deny"
+
+def test_git_checkout_git_dir_flag_still_denied():
+    # `checkout` has no `-C` of its own (only `-b`/`-B`), so it still resolves to the root
+    # `--git-dir`/`-C` flag and stays denied.
+    assert run(command="git checkout -C /etc", mode="acceptEdits") == "deny"
+
 def test_git_unknown_subcommand_asks():
     assert run(command="git clone https://x") == "ask"
 

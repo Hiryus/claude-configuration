@@ -239,6 +239,8 @@ The `git branch`, `git checkout`, and `git switch` commands are:
 
 Deleting a branch is not allowed by default and **ask**.
 
+`git checkout <pathspec>` restores a file from the index/a commit into the working tree instead of switching branches whenever `<pathspec>` is not itself a branch name (with or without the explicit `--` separator). This form is a write and [file rules](#1-file-rules) apply, regardless of mode.
+
 **Reason**: The agent is allowed to update the project, and it is actually its main objective.
 These commands can update the files, but the history will always keep the previous contents (assuming they were committed).
 

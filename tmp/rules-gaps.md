@@ -31,19 +31,6 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 16. [ ] Rule: writing the configuration, `git -c` included, is an **ask**. Current: `git -c` is denied.
 
 
-## 2.9.4 Usual commands
-
-17. [ ] Rule: `git checkout` and `git switch` are allowed in **edit**/**auto** (**ask** in **manual**) — both to switch to an existing branch and, with `-b`/`-c`, to create one — subject to the file rules for the file-restoring form (`git checkout -- <paths>`). Current: **ask** in every mode, and their pathspecs are never path-checked.
-18. [x] Rule: `git reset` is allowed in **edit**/**auto** (**ask** in **manual**) as long as `--hard` is not used, subject to the file rules. Current: **ask** in every mode, and its pathspecs are never path-checked.
-19. [x] Rule: `git add`, `git mv`, and `git rm` are allowed, subject to the file rules. Current: **ask**, whatever the paths.
-
-
-## 2.10 Specific find rules
-
-24. [x] Rule: `-fls`, `-fprint`, `-fprint0` and `-fprintf` are denied. Current: allowed. The first three only get their target path-checked; `-fprintf` is not looked at at all, target included.
-25. [x] Rule: only the leading search roots are path-checked. Current: every non-flag word is, so expression values (`-newer FILE`, `-size +1M`, ...) are checked as if they were search roots.
-
-
 ## 2.13 / 3. Containers
 
 28. [ ] Rule: every podman equivalent is allowed or denied alongside its docker counterpart, and the legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`. Current: none of the three is recognized, so they all fall through to **ask** — including the calls that must be denied, such as `podman run --privileged`.
