@@ -60,7 +60,7 @@ BRANCH_READONLY_ARGS = [
 def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     """
     `git` is allow-listed per subcommand.
-    - The `-C`/`--git-dir`/`GIT_DIR` are refused wherever they sit; `-c` asks (rule 2.9.3) --
+    - The `-C`/`--git-dir`/`GIT_DIR`/`--work-tree`/`GIT_WORK_TREE` are refused wherever they sit; `-c` asks (rule 2.9.3) --
       except `switch -c`/`-C` (create branch), whose grammar node shadows the root one on purpose (see `parsers/git.py`).
     - The history-rewriting subcommands need the user validation,
     - Any path git writes (`--output`, `mv`/`rm`/`checkout <pathspec>`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
@@ -72,12 +72,12 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     invocation = git.parse(command)
     verb = invocation.cmd_parts[1] if len(invocation.cmd_parts) > 1 else None
 
-    # Deny GIT_DIR variable in the command and in the environment as it overrides the repository location.
-    if any(x.name == "GIT_DIR" for x in command.assignments) or "GIT_DIR" in command.environment:
-        return (Decision.DENY, "Do not change git directory.")
+    # Deny GIT_DIR/GIT_WORK_TREE variables in the command and in the environment as they override the repository location.
+    if any(x.name in ("GIT_DIR", "GIT_WORK_TREE") for x in command.assignments) or "GIT_DIR" in command.environment or "GIT_WORK_TREE" in command.environment:
+        return (Decision.DENY, "Do not change the git directory or work tree.")
     # Also deny the related arguments.
     if invocation.has_arg("git-dir"):
-        return (Decision.DENY, "Do not change git directory.")
+        return (Decision.DENY, "Do not change the git directory or work tree.")
 
     if invocation.has_arg("config"):
         return (Decision.ASK, "`git -c` sets configuration for the run and requires the user validation.")

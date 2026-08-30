@@ -652,6 +652,23 @@ def test_git_dir_env_exported_without_value_denied():
     # unknown, but the name alone is enough to flag the later `git` call.
     assert run(command="GIT_DIR=/etc; export GIT_DIR; git log") == "deny"
 
+def test_git_work_tree_flag_denied():
+    assert run(command="git --work-tree=/etc log") == "deny"
+
+def test_git_work_tree_flag_after_verb_denied():
+    assert run(command="git log --work-tree /etc") == "deny"
+
+def test_git_work_tree_flag_bypassing_checkout_ask_denied():
+    # The gap this closes: without the flag tabled, `checkout` would resolve
+    # to its own edit/auto ALLOW branch and skip the repository-boundary check.
+    assert run(command="git --work-tree=/etc checkout .", mode="acceptEdits") == "deny"
+
+def test_git_work_tree_env_prefix_assignment_denied():
+    assert run(command="GIT_WORK_TREE=/etc git checkout .", mode="acceptEdits") == "deny"
+
+def test_git_work_tree_env_propagated_from_earlier_statement_denied():
+    assert run(command="GIT_WORK_TREE=/etc; git checkout .", mode="acceptEdits") == "deny"
+
 # ============================================================================
 # find
 # ============================================================================

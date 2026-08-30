@@ -200,7 +200,9 @@ Git gets specific treatment because it is an important interface for coding and 
 Any `git` command accessing a file outside the current repository is **denied**. This includes:
 - Usage of the `-C` option,
 - Usage of the `--git-dir` option,
-- Defining the `GIT_DIR` environment variable.
+- Usage of the `--work-tree` option,
+- Defining the `GIT_DIR` environment variable,
+- Defining the `GIT_WORK_TREE` environment variable.
 
 **Reason**: The agent should only ever modify the project repository.
 Modifying another project is unacceptable and reading files with git could also leak sensitive data.

@@ -6,7 +6,7 @@ GRAMMAR = CommandSyntax(
     aliases=["git"],
     flags=[
         Flag(name="config", keys=["-c"], value_required=True),
-        Flag(name="git-dir", keys=["--git-dir", "-C"], value_required=True),
+        Flag(name="git-dir", keys=["--git-dir", "-C", "--work-tree"], value_required=True),
         Flag(name="output", keys=["--output", "-o"], value_required=True),
         Flag(name="version", keys=["--version"], value_required=False),
     ],
