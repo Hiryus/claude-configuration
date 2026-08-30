@@ -21,16 +21,6 @@ Gaps between `rules.md` and the current behavior. Rules that are correctly imple
 12. [ ] Rule: defining `GIT_DIR` is denied. Current: denied only when it sits on the same command line as the `git` call; set by an earlier sub-command (`export GIT_DIR=... ; git log`) it goes through.
 
 
-## 2.9.2 History security
-
-15. [x] Rule: `git reset --hard` is denied. Current: **ask**.
-
-
-## 2.9.3 Configuration
-
-16. [ ] Rule: writing the configuration, `git -c` included, is an **ask**. Current: `git -c` is denied.
-
-
 ## 2.13 / 3. Containers
 
 28. [ ] Rule: every podman equivalent is allowed or denied alongside its docker counterpart, and the legacy `docker-compose`/`podman-compose` binaries are treated as `docker compose`. Current: none of the three is recognized, so they all fall through to **ask** — including the calls that must be denied, such as `podman run --privileged`.

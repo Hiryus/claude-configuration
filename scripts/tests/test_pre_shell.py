@@ -249,7 +249,6 @@ def test_assignment_redirect_is_still_checked(cmd, mode, decision):
     "powershell -c ls",
     "cmd /c dir",
     "git -C /x status",
-    "git -c foo=bar status",
     "cd /somewhere && ls",  # rule 2.3: a `cd` may not share the call
 ])
 def test_denied_commands(cmd):
@@ -608,6 +607,12 @@ def test_git_config_output_secret_denied():
 def test_git_config_write_with_verb_shaped_value_asks(cmd):
     # `git config user.name list` writes `user.name=list`: the verb table must not
     # match a word sitting in operand position (see parsers/arguments.py).
+    assert run(command=cmd) == "ask"
+
+@pytest.mark.parametrize("cmd", ["git -c foo=bar status", "git -c core.pager=cat log"])
+def test_git_dash_c_asks(cmd):
+    # `-c` injects config for the run rather than reading it, but rule 2.9.3 still
+    # puts config writes at ASK, not DENY.
     assert run(command=cmd) == "ask"
 
 # ============================================================================

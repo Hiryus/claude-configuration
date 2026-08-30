@@ -60,7 +60,7 @@ BRANCH_READONLY_ARGS = [
 def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     """
     `git` is allow-listed per subcommand.
-    - The `-C`, `--git-dir`, `-c` flags and a `GIT_DIR` variable are refused wherever they sit --
+    - The `-C`/`--git-dir`/`GIT_DIR` are refused wherever they sit; `-c` asks (rule 2.9.3) --
       except `switch -c`/`-C` (create branch), whose grammar node shadows the root one on purpose (see `parsers/git.py`).
     - The history-rewriting subcommands need the user validation,
     - Any path git writes (`--output`, `mv`/`rm`/`checkout <pathspec>`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
@@ -79,10 +79,8 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     if invocation.has_arg("git-dir"):
         return (Decision.DENY, "Do not change git directory.")
 
-    # `git -c` never _reads_ a config, it injects one for the run (`core.pager`, `alias.*`, `credential.helper` all execute a command), so it stays denied.
-    # Reading is served by the `git config` verb below.
     if invocation.has_arg("config"):
-        return (Decision.DENY, "Do not use `git -c` to inject config; it can run arbitrary code. Run the command directly.")
+        return (Decision.ASK, "`git -c` sets configuration for the run and requires the user validation.")
 
     if verb == "config":
         return validate_config(command, invocation, context)
