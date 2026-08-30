@@ -1426,11 +1426,9 @@ def test_unanchored_bind_mount_of_a_secret_asks(cmd):
     # instead of being path-checked. Accepted risk: it still stops at an ask.
     assert run(command=cmd) == "ask"
 
-@pytest.mark.xfail(reason="split_fields() keeps one value per key, so a duplicated source/src pair hides the second path entirely", strict=True)
 def test_bind_mount_with_duplicate_source_keys_denied():
     assert run(command="docker run --rm --mount type=bind,source=./ok,src=.env,target=/x alpine") == "deny"
 
-@pytest.mark.xfail(reason="`readonly` wins over `ro` in parse_mount_ref, so a read-write mount is read as read-only", strict=True)
 def test_bind_mount_with_conflicting_readonly_flags_denied():
     assert run(command="docker run --rm --mount type=bind,source=./.git,readonly=true,ro=false,target=/x alpine") == "deny"
 
@@ -1445,11 +1443,9 @@ def test_mount_binding_host_directory_asks(cmd):
     # Only the types naming a docker object are trusted: an unknown one may bind.
     assert run(command=cmd) == "ask"
 
-@pytest.mark.xfail(reason="parse_mount_ref never reads `volume-opt`, so a bind-backed named volume exposes its device path unchecked", strict=True)
 def test_mount_volume_opt_device_asks():
     assert run(command="docker run --rm --mount type=volume,volume-opt=type=none,volume-opt=o=bind,volume-opt=device=/etc,target=/x alpine") == "ask"
 
-@pytest.mark.xfail(reason="split_fields() keeps one value per key, so `source=.` hides the `src=/etc` that follows it", strict=True)
 def test_mount_with_duplicate_source_keys_asks():
     assert run(command="docker run --rm --mount type=bind,source=.,src=/etc,target=/x alpine", mode="acceptEdits") == "ask"
 

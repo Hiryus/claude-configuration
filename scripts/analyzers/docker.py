@@ -162,15 +162,16 @@ def is_path(text:str) -> bool:
     return text.startswith(("/", "./", "../", "~", ".\\", "..\\", "\\")) or bool(re.match(r"^[A-Za-z]:[\\/]", text))
 
 
-def split_fields(value:str) -> dict[str, str]:
+def split_fields(value:str) -> dict[str, list[str]]:
     """
     The `key=value,key=value` shape shared by `--mount`, `--opt`, `--cache-from`, ...
     A bare field (`readonly`) maps to an empty value.
+    A key may repeat so every value is kept, in order, rather than the last one silently winning.
     """
-    fields:dict[str, str] = {}
+    fields:dict[str, list[str]] = {}
     for field in value.split(","):
         key, _, text = field.partition("=")
-        fields[key] = text
+        fields.setdefault(key, []).append(text)
     return fields
 
 
@@ -258,15 +259,32 @@ def parse_mount_ref(invocation:Invocation) -> tuple[list[Reference], list[str]]:
             references.append(reference)
             continue
         fields = split_fields(spec)
-        source = fields.get("source") or fields.get("src")
-        if source is None or fields.get("type") == "tmpfs":
+        if fields.get("type") == ["tmpfs"]:
             continue  # nothing of the host is exposed
-        if not is_path(source):
+
+        flags = fields.get("readonly", []) + fields.get("ro", [])
+        readonly = bool(flags) and all(x in ("", "true") for x in flags)
+        access = Access.READ if readonly else Access.WRITE
+
+        sources = fields.get("source", []) + fields.get("src", [])
+        if len(sources) > 1:
+            # `source`/`src` are aliases for the same field: docker uses exactly one, so a dommand declaring both is not "maybe a volume name".
+            # Neither value can be dismissed by the is_path() heuristic below, and both are checked directly.
+            references += [Reference(access=access, text=x) for x in sources]
+        elif sources and not is_path(sources[0]):
             unverified.append(spec)
-        else:
-            readonly = fields.get("readonly", fields.get("ro"))
-            access = Access.READ if readonly in ("", "true") else Access.WRITE
-            references.append(Reference(access=access, text=source))
+        elif sources:
+            references.append(Reference(access=access, text=sources[0]))
+
+        # A bind-backed named volume carries its real host path in `volume-opt=device=...`.
+        for opt in fields.get("volume-opt", []):
+            key, _, device = opt.partition("=")
+            if key != "device":
+                continue
+            if is_path(device):
+                references.append(Reference(access=access, text=device))
+            else:
+                unverified.append(spec)
 
     return (references, unverified)
 
@@ -287,7 +305,7 @@ def parse_opt_refs(invocation:Invocation, names:list[str], access:Access) -> lis
         if reference.dynamic or "=" not in value:
             references.append(reference)
         else:
-            references.extend(Reference(access=access, text=x) for x in split_fields(value).values() if is_path(x))
+            references.extend(Reference(access=access, text=x) for values in split_fields(value).values() for x in values if is_path(x))
     return references
 
 
