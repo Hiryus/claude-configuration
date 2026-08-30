@@ -220,7 +220,7 @@ Additionally, for defence in depth, the commands that rewrite history are forbid
 
 Reading the git configuration (via `git config`) is **allowed**.
 
-Writing git configuration (via the same option or `git -c`) is **ask**.
+Writing git configuration (via the same option, `git -c`, or the `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` environment variables) is **ask**.
 
 **Reason**: Reading git configuration is useful for the agent, but modifying it must never happen without the user's consent to maintain system integrity and history safety. Since the user may also run git commands, it is important he/she is aware of the configuration at all times and is not surprised by a change.
 

@@ -1,7 +1,12 @@
+import re
+
 from generic import check_access
 from models.analyzer import Context, Decision, Mode
 from models.parsing import Access, CommandLine, Invocation, Reference
 from parsers import git
+
+# The env-var equivalent of `-c NAME=VALUE`: GIT_CONFIG_COUNT=<n> plus one GIT_CONFIG_KEY_<i>/GIT_CONFIG_VALUE_<i> pair per entry.
+GIT_CONFIG_ENV_PATTERN = re.compile(r"^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$")
 
 ALLOWED_SUBCOMMANDS = [
     "add",
@@ -60,7 +65,8 @@ BRANCH_READONLY_ARGS = [
 def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     """
     `git` is allow-listed per subcommand.
-    - The `-C`/`--git-dir`/`GIT_DIR`/`--work-tree`/`GIT_WORK_TREE` are refused wherever they sit; `-c` asks (rule 2.9.3) --
+    - The `-C`/`--git-dir`/`GIT_DIR`/`--work-tree`/`GIT_WORK_TREE` are refused wherever they sit; `-c` and its env-var
+      equivalent (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`) ask (rule 2.9.3) --
       except `switch -c`/`-C` (create branch), whose grammar node shadows the root one on purpose (see `parsers/git.py`).
     - The history-rewriting subcommands need the user validation,
     - Any path git writes (`--output`, `mv`/`rm`/`checkout <pathspec>`), stages (`add`/`commit`), or restores in the index (`reset`) goes through check_access first.
@@ -78,6 +84,9 @@ def validate(command:CommandLine, context:Context) -> tuple[Decision, str]:
     # Also deny the related arguments.
     if invocation.has_arg("git-dir"):
         return (Decision.DENY, "Do not change the git directory or work tree.")
+
+    if any(GIT_CONFIG_ENV_PATTERN.match(x.name) for x in command.assignments) or any(GIT_CONFIG_ENV_PATTERN.match(k) for k in command.environment):
+        return (Decision.ASK, "`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` set configuration for the run and require the user validation.")
 
     if invocation.has_arg("config"):
         return (Decision.ASK, "`git -c` sets configuration for the run and requires the user validation.")

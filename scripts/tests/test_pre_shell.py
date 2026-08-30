@@ -614,6 +614,18 @@ def test_git_dash_c_asks(cmd):
     # puts config writes at ASK, not DENY.
     assert run(command=cmd) == "ask"
 
+@pytest.mark.parametrize("cmd", [
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git commit -m msg",
+    "GIT_CONFIG_KEY_0=user.name git status",
+    "GIT_CONFIG_VALUE_0=x git log",
+])
+def test_git_config_env_prefix_assignment_asks(cmd):
+    # GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n are the env-var equivalent of `-c`.
+    assert run(command=cmd) == "ask"
+
+def test_git_config_env_propagated_from_earlier_statement_asks():
+    assert run(command="GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=user.name; GIT_CONFIG_VALUE_0=x; git status") == "ask"
+
 # ============================================================================
 # git -C / --git-dir / GIT_DIR (rule 2.9.1)
 # ============================================================================
