@@ -22,8 +22,8 @@ During codebase exploration, also look for existing documentation:
 Most repos have a single LANGUAGE file:
 ```
 /
-├── LANGUAGE.md
 ├── docs/
+│   ├── LANGUAGE.md
 │   └── adr/
 │       ├── 0001-event-sourced-orders.md
 │       └── 0002-postgres-for-write-model.md
