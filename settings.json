@@ -33,6 +33,7 @@
       "RemoteTrigger",
       "Read(.env)"
     ],
+    "defaultMode": "default",
     "disableBypassPermissionsMode": "disable"
   },
   "model": "sonnet",
