@@ -11,4 +11,5 @@ The `Bash`, `Edit`, `Read`, and `Write` tools have specific restrictions listed 
   Especially, if you need to run a bash command that is not **allowed** by default, run it inside a docker container.
 - When running in `auto` and `dontAsk` permission modes, only the **allowed** command will be ever validated.
   No validation request will be forwarded to the user.
-- In any case, if you need to run any bash command, clearly state what they do and how they work, then why you need to use them.
+- Whatever the permission modes, when running `Bash` commands, avoid shell expansions and variables as they require the user's validation to work.
+- Whatever the permission modes, when running `Bash`, clearly state what they do and how they work, then why you need to use them.
