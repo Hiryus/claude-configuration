@@ -70,6 +70,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run python ~/.claude/scripts/user_prompt_submit.py"
+          }
+        ]
+      }
     ]
   },
   "disableRemoteControl": true,

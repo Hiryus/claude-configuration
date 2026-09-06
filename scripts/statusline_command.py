@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import SupportsFloat, SupportsInt
 
+from utils.session import read_auto_mode, state_file
+
 ESC = "\x1b"
 RESET = f"{ESC}[0m"
 BLUE = f"{ESC}[94m"
@@ -24,6 +26,7 @@ PIPE = f" {BLUE}|{RESET} "
 
 @dataclass
 class Status:
+    auto_mode:bool|None
     cwd:Path
     effort_level:str
     model_id:str
@@ -97,6 +100,15 @@ def format_time_until(unix_ts:float) -> str|None:
         return None
 
 
+def read_auto_mode_of(session_id:str) -> bool|None:
+    """
+    The auto mode of the session, or None when the payload carries no usable session id.
+    """
+    if state_file(session_id) is None:
+        return None
+    return read_auto_mode(session_id)
+
+
 def read_input() -> Status:
     raw = sys.stdin.readline()
     input_data = {}
@@ -117,6 +129,7 @@ def read_input() -> Status:
     cwd = workspace.get("current_dir") or input_data.get("cwd")
 
     return Status(
+        auto_mode=read_auto_mode_of(str(input_data.get("session_id") or "")),
         cwd=Path(cwd) if cwd else Path.cwd(),
         effort_level=str(effort.get("level") or ""),
         model_id=str(model.get("id")),
@@ -134,6 +147,12 @@ def read_input() -> Status:
 def main():
     status = read_input()
     status_line_parts = [f"{GREY}repo:{RESET}{CYAN}{status.cwd.name}{RESET}"]
+
+    if status.auto_mode is not None:
+        if status.auto_mode:
+            status_line_parts.append(f"{GREY}auto:{RESET}{YELLOW}on{RESET}")
+        else:
+            status_line_parts.append(f"{GREY}auto:{RESET}off")
 
     ctx = f"{GREY}ctx:{RESET}{get_tokens_color(status.tokens_used)}{format_count(status.tokens_used)}{RESET}/{format_count(status.tokens_max)}"
     if status.tokens_used_pct > 0.0:

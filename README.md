@@ -32,17 +32,23 @@ Personal configuration and scripts for claude code.
 
 ## How it works
 
-The claude configuration define two hooks:
-- `scripts/pre_file_access.py` for the `Edit|Read|Write|Grep` tools,
-- `scripts/pre_shell.py` for the `Bash` tools.
+The claude configuration define several hooks:
+- `scripts/pre_file_access.py` fires before the `Edit|Read|Write|Grep` tool calls,
+- `scripts/pre_shell.py` fires before the `Bash` tool calls.
+- `scripts/user_prompt_submit.py` fires before all the user's prompts.
 
-Any direct access to a file (via `Edit`, `Read`, `Write`, or `Grep`) is thus validated by the `pre_file_access.py` script and any bash command is validated by the `pre_shell.py` script implemented based on [specifications rules](SECURITY.md).
+Any direct access to a file (via `Edit`, `Read`, `Write`, or `Grep`) is validated by the `pre_file_access.py` script and any bash command is validated by the `pre_shell.py` script implemented based on [specifications rules](SECURITY.md).
 
-Analyzing bash commands requires parsing them, which is not exactly easy and not 100% secure due to the complexity and commands updates.
-However, it a good compromise between security and usability. A full sandbox would be better, but would require to include git credentials in the sandbox and is not easy to integrate with claude code while keeping good interractivity with the user.
+The `user_prompt_submit.py` hook has two purposes:
+1. It intercepts `! auto <on|off>` commands to set the "auto" mode on the current session.
+2. FOr any other prompt, it injects a system note into the context when the "auto" mode is enable.
+The auto mode status is written in `~/.claude/sessions/<session_id>.json`.
 
-The aura project will eventually solve this issue in a much cleaner way (more tools - fully sandboxed bash by design).
-Until then, the bash analysis for claude code is described below.
+The `statusline_command.py` script is invoked by claude code to drawx the status command line. It injects the current auto status (on/off) and useful information like the current model, context size and usage.
+
+> Analyzing bash commands requires parsing them, which is not exactly easy and not 100% reliable due to the  complexity and commands updates. However, it a good compromise between security and usability. A full sandbox would be better, but would require to include git credentials in the sandbox and is not easy to integrate with claude code while keeping good interractivity with the user.
+>
+> The aura project will eventually solve this issue in a much cleaner way (more tools - fully sandboxed bash by design). Until then, the bash analysis for claude code is described below.
 
 ### Bash analysis
 
