@@ -36,13 +36,15 @@ A call is declared "safe" if:
 
 ### Modes
 
-Every call runs in exactly one mode, derived from the harness permission mode:
+Every call runs in exactly one mode, carried by the session itself:
 - In **manual** mode, only reads are automatically **allowed** based on the [file rules](#1-file-rules).
-  This mode corresponds to the `default` and `plan` permission modes from claude code.
 - In **edit** mode, reads and writes are automatically **allowed** based on the [file rules](#1-file-rules).
-  This mode corresponds to the `acceptEdits` permission mode from claude code.
 - The **auto** mode **allows** the same calls as the **edit** mode, but also transforms any **ask** into a **deny**, effectively forbidding interractive validations.
-  This mode corresponds to any permission mode from claude code that does not already fall into the other two modes.
+
+The mode is set with the `mode <manual|edit|auto>` prompt command and recorded under the `mode` key of `~/.claude/sessions/<session_id>.json`.
+The claude code permission mode plays no part in it.
+
+A session that records no mode - or a name that no mode answers to - runs in **manual** mode: an unknown session asks rather than acts on its own.
 
 ### Conflicts resolution:
 

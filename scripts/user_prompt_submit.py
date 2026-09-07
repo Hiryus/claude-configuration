@@ -1,21 +1,22 @@
 """
-Hook pre-processing the user prompts to carry the session "auto" mode:
-- `auto on` / `auto off` changes the mode and never reaches the model,
-- `auto` without any suffix toggles the mode (and never reaches the model),
-- any other prompt gets a system note injected while the mode is on.
+Hook pre-processing the user prompts to carry the session mode:
+- `mode manual|edit|auto` changes the mode and never reaches the model,
+- `mode` without any suffix reports the current mode (and never reaches the model),
+- any other prompt gets a system note injected while the session is in auto mode.
 
 The mode is stored per session in `~/.claude/sessions/<session_id>.json`, so that the file hooks
-can read it back and treat the session as unattended whatever the harness permission mode says.
+can read it back: it is the only thing they consult, the harness permission mode plays no part.
 """
 
 import json
 import re
 import sys
 
-from utils.session import read_auto_mode, write_auto_mode
+from models.analyzer import Mode
+from utils.session import read_mode, write_mode
 
 AUTO_MODE_NOTE = "**You are running in auto mode.**"
-AUTO_COMMAND = re.compile(r"^\s*!?\s*auto(\s+(?P<state>on|off))?\s*$", re.IGNORECASE)
+MODE_COMMAND = re.compile(r"^\s*mode(\s+(?P<name>manual|edit|auto))?\s*$", re.IGNORECASE)
 
 # ============================================================================
 # Hook I/O
@@ -45,29 +46,20 @@ def format_context(additional_context:str) -> str:
 # Prompt handling
 # ============================================================================
 
-def toggle(prompt:str, session_id:str) -> bool|None:
-    """
-    The mode the prompt asks for, or None when it is an ordinary prompt.
-    """
-    match = AUTO_COMMAND.match(prompt)
-    if match is None:
-        return None
-    if (state := match.group("state")) is None:
-        return not read_auto_mode(session_id)
-    return state.lower() == "on"
-
-
 def main(input_data:dict) -> str|None:
     prompt:str = input_data.get("prompt") or ""
     session_id:str = input_data.get("session_id") or ""
 
-    if (requested := toggle(prompt, session_id)) is not None:
+    if (command := MODE_COMMAND.match(prompt)) is not None:
+        if (name := command.group("name")) is None:
+            # Reported through `Mode.of`, not raw: this is the mode the tool hooks will actually apply.
+            return format_block(f"Mode is {Mode.of(read_mode(session_id)).value.upper()} for this session.")
         if not session_id:
-            return format_block("Cannot switch the auto mode: the harness gave no session id.")
-        write_auto_mode(session_id, requested)
-        return format_block(f"Auto mode is now {'ON' if requested else 'OFF'} for this session.")
+            return format_block("Cannot switch the mode: the harness gave no session id.")
+        write_mode(session_id, name.lower())
+        return format_block(f"Mode is now {name.upper()} for this session.")
 
-    if read_auto_mode(session_id):
+    if Mode.of(read_mode(session_id)) is Mode.AUTO:
         return format_context(AUTO_MODE_NOTE)
 
 

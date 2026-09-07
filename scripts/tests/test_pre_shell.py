@@ -7,10 +7,13 @@ import sys
 from pathlib import Path
 
 import pytest
+import utils.session
 from pre_shell import main
+from utils.session import write_mode
 
 HOOK = "pre_shell.py"
 ROOT = "/proj"
+SESSION = "6c194564-b08a-44dc-9661-8d05e07cb52d"
 
 # `project_root` defaults to the `cwd` argument, which reproduces the behavior from
 # before cwd tracking exactly. `project_root=None` sends an empty environment, i.e.
@@ -21,6 +24,17 @@ SAME_AS_CWD = object()
 # Helpers
 # ============================================================================
 
+@pytest.fixture(autouse=True)
+def sessions(tmp_path, monkeypatch) -> Path:
+    """
+    The mode now comes from the session file, and the state files go under `tmp_path`: the real
+    `~/.claude/sessions` belongs to the harness, and writing there would flip a live session's mode.
+    Autouse, so that no test reaches it by forgetting to ask.
+    """
+    directory = tmp_path / "sessions"
+    monkeypatch.setattr(utils.session, "SESSIONS_DIR", directory)
+    return directory
+
 def environment(cwd:object, project_root:object) -> dict[str, str]:
     """
     The environment the hook reads `CLAUDE_PROJECT_DIR` from.
@@ -29,12 +43,13 @@ def environment(cwd:object, project_root:object) -> dict[str, str]:
     root = cwd if project_root is SAME_AS_CWD else project_root
     return {"CLAUDE_PROJECT_DIR": root} if isinstance(root, str) else {}
 
-def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="manual", project_root=SAME_AS_CWD):
+    write_mode(SESSION, mode)
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
+        "session_id": SESSION,
         "tool_name": tool_name,
-        "permission_mode": mode,
         "tool_input": {
             "command": command,
             "description": description,
@@ -42,10 +57,10 @@ def output(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful de
     }, environ=environment(cwd, project_root))
     return json.loads(result).get("hookSpecificOutput", {})
 
-def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+def run(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="manual", project_root=SAME_AS_CWD):
     return output(command, tool_name, cwd, description, mode, project_root).get("permissionDecision")
 
-def reason(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="default", project_root=SAME_AS_CWD):
+def reason(command:str, tool_name="Bash", cwd=ROOT, description="A meaningful description", mode="manual", project_root=SAME_AS_CWD):
     return output(command, tool_name, cwd, description, mode, project_root).get("permissionDecisionReason")
 
 # ============================================================================
@@ -62,31 +77,31 @@ def test_non_bash_tool_denied():
 def test_auto_mode_turns_ask_into_deny():
     # Rule "Modes": no interactive validation in auto mode.
     assert run(command="docker login -u me registry.io") == "ask"
-    assert run(command="docker login -u me registry.io", mode="bypassPermissions") == "deny"
+    assert run(command="docker login -u me registry.io", mode="auto") == "deny"
 
 def test_auto_mode_deny_explains_the_mode_and_keeps_the_ask_reason():
-    denial = reason(command="docker login -u me registry.io", mode="bypassPermissions")
+    denial = reason(command="docker login -u me registry.io", mode="auto")
     assert "auto mode" in denial
     assert "docker login" in denial
 
 def test_auto_mode_deny_keeps_the_file_ask_reason():
     # An ask coming from the file rules is wrapped once, keeping its own reason.
-    denial = reason(command="cat /elsewhere/notes.txt", mode="bypassPermissions")
+    denial = reason(command="cat /elsewhere/notes.txt", mode="auto")
     assert "outside the project" in denial
     assert denial.count("auto mode") == 1
 
-@pytest.mark.parametrize("mode", ["default", "plan", "acceptEdits"])
+@pytest.mark.parametrize("mode", ["manual", "edit"])
 def test_other_modes_keep_asking(mode):
     assert run(command="docker login -u me registry.io", mode=mode) == "ask"
 
 @pytest.mark.parametrize("cmd", ["ls", "echo x > notes.txt"])
 def test_auto_mode_keeps_allow(cmd):
     # Auto mode allows the same calls as edit mode, writes included.
-    assert run(command=cmd, mode="bypassPermissions") == "allow"
+    assert run(command=cmd, mode="auto") == "allow"
 
 def test_auto_mode_keeps_the_deny_reason():
-    assert run(command="gh pr list", mode="bypassPermissions") == "deny"
-    assert "MCP" in reason(command="gh pr list", mode="bypassPermissions")
+    assert run(command="gh pr list", mode="auto") == "deny"
+    assert "MCP" in reason(command="gh pr list", mode="auto")
 
 # ============================================================================
 # Description quality
@@ -188,7 +203,7 @@ def test_readonly_log_file_is_a_write(cmd):
 def test_readonly_log_file_write_asks_in_manual_mode():
     # `less -o FILE` writes its log: the write rules apply, unlike every other operand.
     assert run(command="less -o out.log notes.txt") == "ask"
-    assert run(command="less -o out.log notes.txt", mode="acceptEdits") == "allow"
+    assert run(command="less -o out.log notes.txt", mode="edit") == "allow"
 
 def test_readonly_multi_value_flag_missing_its_values_denied():
     assert run(command="jq --arg k") == "deny"
@@ -229,11 +244,11 @@ def test_assignment_only_allowed():
     assert run(command="FOO=bar") == "allow"
 
 @pytest.mark.parametrize(("cmd", "mode", "decision"), [
-    ("FOO=bar > .env", "default", "deny"),                    # 1.1: truncates a secret
-    ("FOO=bar > /proj/.git/config", "acceptEdits", "deny"),   # 1.2: truncates a git file
-    ("FOO=bar > /elsewhere/x.txt", "default", "ask"),         # 1.4: outside the project
-    ("FOO=bar > notes.txt", "default", "ask"),                # 1.4: a write in manual mode
-    ("FOO=bar > notes.txt", "acceptEdits", "allow"),
+    ("FOO=bar > .env", "manual", "deny"),               # 1.1: truncates a secret
+    ("FOO=bar > /proj/.git/config", "edit", "deny"),     # 1.2: truncates a git file
+    ("FOO=bar > /elsewhere/x.txt", "manual", "ask"),     # 1.4: outside the project
+    ("FOO=bar > notes.txt", "manual", "ask"),            # 1.4: a write in manual mode
+    ("FOO=bar > notes.txt", "edit", "allow"),
 ])
 def test_assignment_redirect_is_still_checked(cmd, mode, decision):
     # An assignment is harmless on its own, but `>` truncates its target all the same,
@@ -285,7 +300,7 @@ def test_file_outside_project_asks():
 def test_file_compile_flag_makes_magic_file_a_write():
     # `-C` compiles `-m`'s value into `PATH.mgc`: a write, not just a read.
     assert run(command="file -C -m notes") == "ask"
-    assert run(command="file -C -m notes", mode="acceptEdits") == "allow"
+    assert run(command="file -C -m notes", mode="edit") == "allow"
 
 def test_file_magic_file_without_compile_stays_a_read():
     assert run(command="file -m notes data.txt") == "allow"
@@ -337,7 +352,7 @@ def test_write_claude_dir_allowed_when_it_is_the_project(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
     monkeypatch.setenv("USERPROFILE", FAKE_HOME)
     harness = str(Path(FAKE_HOME) / ".claude")
-    assert run(command="echo x > scripts/utils.py", cwd=harness, mode="acceptEdits") == "allow"
+    assert run(command="echo x > scripts/utils.py", cwd=harness, mode="edit") == "allow"
 
 def test_write_claude_dir_asks_in_manual_mode_when_it_is_the_project(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
@@ -357,7 +372,7 @@ def test_write_claude_dir_asks_in_manual_mode_when_it_is_the_project(monkeypatch
 def test_in_project_write_asks_in_manual_mode(cmd):
     # Rule 1.4: writes are only automatic in edit mode, whatever the binary.
     assert run(command=cmd) == "ask"
-    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
 
 def test_in_project_read_allowed_in_manual_mode():
     assert run(command="cat out.txt") == "allow"
@@ -411,46 +426,46 @@ def test_git_branch_flag_with_separate_value_asks(cmd):
 
 @pytest.mark.parametrize("cmd", ["git checkout main", "git checkout -b feature", "git switch main", "git switch -c feature", "git switch -C feature"])
 def test_git_checkout_switch_asks_in_manual_mode(cmd):
-    assert run(command=cmd, mode="default") == "ask"
+    assert run(command=cmd, mode="manual") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git checkout main", "git checkout -b feature", "git switch main", "git switch -c feature", "git switch -C feature"])
 def test_git_checkout_switch_allowed_in_edit_and_auto_mode(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "allow"
-    assert run(command=cmd, mode="bypassPermissions") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
+    assert run(command=cmd, mode="auto") == "allow"
 
 @pytest.mark.parametrize("cmd", ["git checkout -- foo.py", "git checkout HEAD~1 -- foo.py", "git checkout foo.py"])
 def test_git_checkout_pathspec_form_allowed_in_edit_mode(cmd):
     # The file-restoring form is not gated by mode: it goes through the file rules like any other write.
     # It does not need an explicit `--`: `git checkout foo.py` restores `foo.py` just the same when
     # `foo.py` is not also a branch name, so every positional is checked whether `--` is spelled or not.
-    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
 
 @pytest.mark.parametrize("cmd", ["git checkout -- foo.py", "git checkout foo.py"])
 def test_git_checkout_pathspec_form_write_asks_in_manual_mode(cmd):
-    assert run(command=cmd, mode="default") == "ask"
+    assert run(command=cmd, mode="manual") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git checkout -- /etc/passwd", "git checkout /etc/passwd"])
 def test_git_checkout_pathspec_outside_project_asks(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "ask"
+    assert run(command=cmd, mode="edit") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git checkout -- ~/.ssh/id_rsa", "git checkout ~/.ssh/id_rsa", "git checkout .env"])
 def test_git_checkout_pathspec_secret_file_denied(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "deny"
+    assert run(command=cmd, mode="edit") == "deny"
 
 def test_git_checkout_branch_creation_value_not_path_checked():
     # `-b`/`-B` consume the new branch's name as their own flag value, so it never lands in
     # `positionals` and is never mistaken for a pathspec (a secret-looking branch name still allows).
-    assert run(command="git checkout -b .env", mode="acceptEdits") == "allow"
+    assert run(command="git checkout -b .env", mode="edit") == "allow"
 
 def test_git_checkout_force_create_start_point_is_path_checked():
     # `-B <new-branch> <start-point>`: the branch name is consumed by `-B`, but the start-point is an
     # ordinary positional and gets the same over-inclusive treatment as `git reset`'s treeish operand.
-    assert run(command="git checkout -B feature ~/.ssh/id_rsa", mode="acceptEdits") == "deny"
+    assert run(command="git checkout -B feature ~/.ssh/id_rsa", mode="edit") == "deny"
 
 def test_git_checkout_git_dir_flag_still_denied():
     # `checkout` has no `-C` of its own (only `-b`/`-B`), so it still resolves to the root
     # `--git-dir`/`-C` flag and stays denied.
-    assert run(command="git checkout -C /etc", mode="acceptEdits") == "deny"
+    assert run(command="git checkout -C /etc", mode="edit") == "deny"
 
 def test_git_unknown_subcommand_asks():
     assert run(command="git clone https://x") == "ask"
@@ -464,12 +479,12 @@ def test_git_push_force_denied(cmd):
 
 @pytest.mark.parametrize("cmd", ["git reset", "git reset HEAD~1", "git reset --soft HEAD~1", "git reset --mixed"])
 def test_git_reset_asks_in_manual_mode(cmd):
-    assert run(command=cmd, mode="default") == "ask"
+    assert run(command=cmd, mode="manual") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git reset", "git reset HEAD~1", "git reset --soft HEAD~1", "git reset --mixed", "git reset -- foo.py"])
 def test_git_reset_allowed_in_edit_and_auto_mode(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "allow"
-    assert run(command=cmd, mode="bypassPermissions") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
+    assert run(command=cmd, mode="auto") == "allow"
 
 @pytest.mark.parametrize("cmd", [
     "git reset --hard",
@@ -479,31 +494,31 @@ def test_git_reset_allowed_in_edit_and_auto_mode(cmd):
 ])
 def test_git_reset_hard_denied(cmd):
     assert run(command=cmd) == "deny"
-    assert run(command=cmd, mode="acceptEdits") == "deny"
+    assert run(command=cmd, mode="edit") == "deny"
 
 def test_git_reset_pathspec_secret_file_denied():
-    assert run(command="git reset -- ~/.ssh/id_rsa", mode="acceptEdits") == "deny"
+    assert run(command="git reset -- ~/.ssh/id_rsa", mode="edit") == "deny"
 
 def test_git_reset_pathspec_outside_project_asks():
-    assert run(command="git reset -- /etc/passwd", mode="acceptEdits") == "ask"
+    assert run(command="git reset -- /etc/passwd", mode="edit") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git add foo.py", "git mv foo.py bar.py", "git rm foo.py"])
 def test_git_add_mv_rm_allowed_in_edit_and_auto_mode(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "allow"
-    assert run(command=cmd, mode="bypassPermissions") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
+    assert run(command=cmd, mode="auto") == "allow"
 
 @pytest.mark.parametrize("cmd", ["git mv foo.py bar.py", "git rm foo.py", "git rm -r dir"])
 def test_git_mv_rm_write_asks_in_manual_mode(cmd):
     # `mv`/`rm` write the working tree, so the manual-mode write rule (not `git`-specific) applies.
-    assert run(command=cmd, mode="default") == "ask"
+    assert run(command=cmd, mode="manual") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git mv foo.py /etc/bar.py", "git rm /etc/passwd"])
 def test_git_mv_rm_pathspec_outside_project_asks(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "ask"
+    assert run(command=cmd, mode="edit") == "ask"
 
 @pytest.mark.parametrize("cmd", ["git mv ~/.ssh/id_rsa bar.py", "git rm ~/.ssh/id_rsa"])
 def test_git_mv_rm_pathspec_secret_file_denied(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "deny"
+    assert run(command=cmd, mode="edit") == "deny"
 
 @pytest.mark.parametrize("cmd", [
     "git remote",
@@ -673,13 +688,13 @@ def test_git_work_tree_flag_after_verb_denied():
 def test_git_work_tree_flag_bypassing_checkout_ask_denied():
     # The gap this closes: without the flag tabled, `checkout` would resolve
     # to its own edit/auto ALLOW branch and skip the repository-boundary check.
-    assert run(command="git --work-tree=/etc checkout .", mode="acceptEdits") == "deny"
+    assert run(command="git --work-tree=/etc checkout .", mode="edit") == "deny"
 
 def test_git_work_tree_env_prefix_assignment_denied():
-    assert run(command="GIT_WORK_TREE=/etc git checkout .", mode="acceptEdits") == "deny"
+    assert run(command="GIT_WORK_TREE=/etc git checkout .", mode="edit") == "deny"
 
 def test_git_work_tree_env_propagated_from_earlier_statement_denied():
-    assert run(command="GIT_WORK_TREE=/etc; git checkout .", mode="acceptEdits") == "deny"
+    assert run(command="GIT_WORK_TREE=/etc; git checkout .", mode="edit") == "deny"
 
 # ============================================================================
 # find
@@ -866,7 +881,7 @@ def test_find_exec_flags_denied(flag):
 ])
 def test_find_output_file_flags_denied(cmd):
     # Rule 2.10: these write find's own report to a file outside the tool's read/write vetting, so they are refused outright.
-    assert run(command=cmd, mode="acceptEdits") == "deny"
+    assert run(command=cmd, mode="edit") == "deny"
 
 @pytest.mark.xfail(reason="`-delete` takes no value, so the FILE_WRITE_FLAGS loop raises ParseError instead of vetting the search roots as writes", strict=True)
 @pytest.mark.parametrize("cmd", ["find . -delete", "find build -delete"])
@@ -908,7 +923,7 @@ def test_find_root_before_expression_still_checked():
 # ============================================================================
 
 def test_git_output_in_project_allowed():
-    assert run(command="git diff --output=out.txt", mode="acceptEdits") == "allow"
+    assert run(command="git diff --output=out.txt", mode="edit") == "allow"
 
 def test_git_output_external_asks():
     assert run(command="git diff --output=/etc/x") == "ask"
@@ -1135,7 +1150,7 @@ def test_cwd_inside_git_dir_does_not_defeat_the_git_rule(tmp_path):
     # cannot hide a git file behind a plain name.
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
-    assert run(command="echo x > config", cwd=str(git_dir), mode="acceptEdits") == "deny"
+    assert run(command="echo x > config", cwd=str(git_dir), mode="edit") == "deny"
 
 def test_cwd_inside_ssh_dir_does_not_defeat_the_secret_rule(tmp_path):
     ssh_dir = tmp_path / ".ssh"
@@ -1343,7 +1358,7 @@ def test_escape_option_hidden_behind_an_unknown_option_still_denied():
 ])
 def test_container_run_allowed(cmd):
     # Edit mode: a read-write bind mount is a write, gated by §1.4 in manual mode.
-    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
 
 def test_only_the_tty_flag_gates_the_interactive_cluster():
     # `-i` is on the §3.3 list, `-t` is not: only the latter is named in the reason.
@@ -1494,7 +1509,7 @@ def test_mount_volume_opt_device_asks():
     assert run(command="docker run --rm --mount type=volume,volume-opt=type=none,volume-opt=o=bind,volume-opt=device=/etc,target=/x alpine") == "ask"
 
 def test_mount_with_duplicate_source_keys_asks():
-    assert run(command="docker run --rm --mount type=bind,source=.,src=/etc,target=/x alpine", mode="acceptEdits") == "ask"
+    assert run(command="docker run --rm --mount type=bind,source=.,src=/etc,target=/x alpine", mode="edit") == "ask"
 
 @pytest.mark.parametrize("cmd", [
     "docker run --rm -v mydata:/data alpine",
@@ -1547,7 +1562,7 @@ def test_volume_create_binding_host_directory_asks(cmd):
     "docker container cp ./src web:/app",
 ])
 def test_container_cp_allowed(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
 
 @pytest.mark.parametrize("cmd", [
     "docker compose cp web:/app/out /etc/out",
@@ -1567,7 +1582,7 @@ def test_container_cp_outside_project_asks(cmd):
     "docker build --cache-to type=local,dest=./cache .",
 ])
 def test_container_build_allowed(cmd):
-    assert run(command=cmd, mode="acceptEdits") == "allow"
+    assert run(command=cmd, mode="edit") == "allow"
 
 @pytest.mark.parametrize("cmd", [
     "docker build -f /etc/Dockerfile .",

@@ -6,11 +6,14 @@ import json
 from pathlib import Path
 
 import pytest
+import utils.session
 from pre_file_access import main
+from utils.session import write_mode
 
 HOOK = "pre_file_access.py"
 ROOT = "/proj"
 FAKE_HOME = "/home/fakeuser"
+SESSION = "6c194564-b08a-44dc-9661-8d05e07cb52d"
 
 # `project_root` defaults to the `cwd` argument, which reproduces the behavior from
 # before cwd tracking exactly. `project_root=None` sends an empty environment, i.e.
@@ -21,6 +24,17 @@ SAME_AS_CWD = object()
 # Helpers
 # ============================================================================
 
+@pytest.fixture(autouse=True)
+def sessions(tmp_path, monkeypatch) -> Path:
+    """
+    The mode now comes from the session file, and the state files go under `tmp_path`: the real
+    `~/.claude/sessions` belongs to the harness, and writing there would flip a live session's mode.
+    Autouse, so that no test reaches it by forgetting to ask.
+    """
+    directory = tmp_path / "sessions"
+    monkeypatch.setattr(utils.session, "SESSIONS_DIR", directory)
+    return directory
+
 def environment(cwd:object, project_root:object) -> dict[str, str]:
     """
     The environment the hook reads `CLAUDE_PROJECT_DIR` from.
@@ -29,22 +43,23 @@ def environment(cwd:object, project_root:object) -> dict[str, str]:
     root = cwd if project_root is SAME_AS_CWD else project_root
     return {"CLAUDE_PROJECT_DIR": root} if isinstance(root, str) else {}
 
-def output(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+def output(file_path:str, tool_name="Read", cwd=ROOT, mode="manual", project_root=SAME_AS_CWD):
+    write_mode(SESSION, mode)
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
+        "session_id": SESSION,
         "tool_name": tool_name,
-        "permission_mode": mode,
         "tool_input": {
             "file_path": file_path,
         },
     }, environ=environment(cwd, project_root))
     return json.loads(result).get("hookSpecificOutput", {})
 
-def run(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+def run(file_path:str, tool_name="Read", cwd=ROOT, mode="manual", project_root=SAME_AS_CWD):
     return output(file_path, tool_name, cwd, mode, project_root).get("permissionDecision")
 
-def reason(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_root=SAME_AS_CWD):
+def reason(file_path:str, tool_name="Read", cwd=ROOT, mode="manual", project_root=SAME_AS_CWD):
     return output(file_path, tool_name, cwd, mode, project_root).get("permissionDecisionReason")
 
 # ============================================================================
@@ -54,24 +69,55 @@ def reason(file_path:str, tool_name="Read", cwd=ROOT, mode="default", project_ro
 def test_auto_mode_turns_ask_into_deny():
     # Rule "Modes": no interactive validation in auto mode.
     assert run(file_path="/elsewhere/notes.txt") == "ask"
-    assert run(file_path="/elsewhere/notes.txt", mode="bypassPermissions") == "deny"
+    assert run(file_path="/elsewhere/notes.txt", mode="auto") == "deny"
 
 def test_auto_mode_deny_explains_the_mode_and_keeps_the_ask_reason():
-    denial = reason(file_path="/elsewhere/notes.txt", mode="bypassPermissions")
+    denial = reason(file_path="/elsewhere/notes.txt", mode="auto")
     assert "auto mode" in denial
     assert "outside the project" in denial
 
-@pytest.mark.parametrize("mode", ["default", "plan", "acceptEdits"])
+@pytest.mark.parametrize("mode", ["manual", "edit"])
 def test_other_modes_keep_asking(mode):
     assert run(file_path="/elsewhere/notes.txt", mode=mode) == "ask"
 
 @pytest.mark.parametrize("tool_name", ["Read", "Write"])
 def test_auto_mode_keeps_allow(tool_name):
-    assert run(file_path="/proj/main.py", tool_name=tool_name, mode="bypassPermissions") == "allow"
+    assert run(file_path="/proj/main.py", tool_name=tool_name, mode="auto") == "allow"
 
 def test_auto_mode_keeps_the_deny_reason():
-    assert run(file_path="/proj/.env", mode="bypassPermissions") == "deny"
-    assert "secret" in reason(file_path="/proj/.env", mode="bypassPermissions")
+    assert run(file_path="/proj/.env", mode="auto") == "deny"
+    assert "secret" in reason(file_path="/proj/.env", mode="auto")
+
+def test_the_mode_comes_from_the_session_not_from_the_harness():
+    # The payload carries no permission mode any more: the session file is the only source.
+    assert run(file_path="/proj/main.py", tool_name="Write", mode="manual") == "ask"
+    assert run(file_path="/proj/main.py", tool_name="Write", mode="edit") == "allow"
+
+@pytest.mark.parametrize("recorded", ["config", "plan", "acceptEdits", ""])
+def test_a_name_nothing_runs_in_is_manual(recorded):
+    # A typo, or a mode from another version, must not hand the session more autonomy than manual.
+    assert run(file_path="/proj/main.py", tool_name="Write", mode=recorded) == "ask"
+
+def test_a_session_without_a_state_file_is_manual(sessions):
+    assert not sessions.exists()
+    result = main({
+        "cwd": ROOT,
+        "hook_event_name": "PreToolUse",
+        "session_id": SESSION,
+        "tool_name": "Write",
+        "tool_input": {"file_path": "/proj/main.py"},
+    }, environ={"CLAUDE_PROJECT_DIR": ROOT})
+    assert json.loads(result)["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+def test_a_call_without_a_session_id_is_manual():
+    # Nothing can be recorded for that session, so nothing but manual can be applied to it.
+    result = main({
+        "cwd": ROOT,
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {"file_path": "/proj/main.py"},
+    }, environ={"CLAUDE_PROJECT_DIR": ROOT})
+    assert json.loads(result)["hookSpecificOutput"]["permissionDecision"] == "ask"
 
 # ============================================================================
 # Secrets
@@ -119,7 +165,7 @@ def test_harness_credentials_write_denied_when_the_harness_is_the_project(monkey
     monkeypatch.setenv("HOME", FAKE_HOME)
     monkeypatch.setenv("USERPROFILE", FAKE_HOME)
     harness = Path(FAKE_HOME) / ".claude"
-    assert run(file_path=str(harness / ".credentials.json"), tool_name="Write", cwd=str(harness), mode="acceptEdits") == "deny"
+    assert run(file_path=str(harness / ".credentials.json"), tool_name="Write", cwd=str(harness), mode="edit") == "deny"
 
 def test_harness_configuration_is_not_a_credentials_file(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
@@ -156,7 +202,7 @@ def test_read_claude_dir_allowed(monkeypatch):
     path = str(Path(FAKE_HOME) / ".claude" / "settings.json")
     assert run(file_path=path, tool_name="Read") == "allow"
 
-@pytest.mark.parametrize("mode", ["default", "plan", "acceptEdits"])
+@pytest.mark.parametrize("mode", ["manual", "edit"])
 def test_write_claude_dir_denied_from_another_project(monkeypatch, mode):
     # Rule 1.3: the harness is off-limits whatever the mode, since writing it
     # would let the agent lift its own restrictions.
@@ -183,7 +229,7 @@ def test_write_claude_dir_allowed_when_it_is_the_project(monkeypatch):
     monkeypatch.setenv("HOME", FAKE_HOME)
     monkeypatch.setenv("USERPROFILE", FAKE_HOME)
     harness = Path(FAKE_HOME) / ".claude"
-    assert run(file_path=str(harness / "scripts" / "utils.py"), tool_name="Write", cwd=str(harness), mode="acceptEdits") == "allow"
+    assert run(file_path=str(harness / "scripts" / "utils.py"), tool_name="Write", cwd=str(harness), mode="edit") == "allow"
 
 def test_write_claude_dir_denied_outside_a_project_nested_in_it(monkeypatch):
     # The project is a harness subdirectory: files above it are still harness
@@ -201,7 +247,7 @@ def test_harness_as_project_is_decided_by_the_project_root_not_the_cwd(monkeypat
     monkeypatch.setenv("USERPROFILE", FAKE_HOME)
     harness = Path(FAKE_HOME) / ".claude"
     target = str(harness / "settings.json")
-    assert run(file_path=target, tool_name="Write", cwd=str(harness / "scripts"), project_root=str(harness), mode="acceptEdits") == "allow"
+    assert run(file_path=target, tool_name="Write", cwd=str(harness / "scripts"), project_root=str(harness), mode="edit") == "allow"
 
 # ============================================================================
 # Context: the project root and the current directory are two different things
@@ -358,18 +404,19 @@ def test_doublestar_in_missing_subdirectory_allowed(tmp_path):
 # Grep tool (gap #44: it names its search location `path`, not `file_path`)
 # ============================================================================
 
-def grep_output(path:str|None, cwd=ROOT, mode="default", project_root=SAME_AS_CWD) -> dict:
+def grep_output(path:str|None, cwd=ROOT, mode="manual", project_root=SAME_AS_CWD) -> dict:
     tool_input = {"pattern": "secret"} if path is None else {"pattern": "secret", "path": path}
+    write_mode(SESSION, mode)
     result = main({
         "cwd": cwd,
         "hook_event_name": "PreToolUse",
+        "session_id": SESSION,
         "tool_name": "Grep",
-        "permission_mode": mode,
         "tool_input": tool_input,
     }, environ=environment(cwd, project_root))
     return json.loads(result).get("hookSpecificOutput", {})
 
-def grep_run(path:str|None, cwd=ROOT, mode="default", project_root=SAME_AS_CWD) -> str|None:
+def grep_run(path:str|None, cwd=ROOT, mode="manual", project_root=SAME_AS_CWD) -> str|None:
     return grep_output(path, cwd, mode, project_root).get("permissionDecision")
 
 def test_grep_secret_file_path_denied():
@@ -390,4 +437,4 @@ def test_grep_without_path_denied_when_cwd_is_outside_project():
 
 def test_grep_is_never_treated_as_a_write(tmp_path):
     # Rule "Modes": a write in manual mode would ask; Grep only reads, so it must stay allowed.
-    assert grep_run(str(tmp_path), cwd=str(tmp_path), mode="default") == "allow"
+    assert grep_run(str(tmp_path), cwd=str(tmp_path), mode="manual") == "allow"

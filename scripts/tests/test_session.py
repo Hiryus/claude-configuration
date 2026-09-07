@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 import utils.session
-from utils.session import read_auto_mode, state_file, write_auto_mode
+from utils.session import read_mode, state_file, write_mode
 
 SESSION = "6c194564-b08a-44dc-9661-8d05e07cb52d"
 
@@ -30,45 +30,59 @@ def sessions(tmp_path, monkeypatch) -> Path:
 # ============================================================================
 
 def test_the_file_is_named_after_the_session(sessions):
-    write_auto_mode(SESSION, True)
-    assert json.loads((sessions / f"{SESSION}.json").read_text(encoding="utf-8")) == {"auto": True}
+    write_mode(SESSION, "auto")
+    assert json.loads((sessions / f"{SESSION}.json").read_text(encoding="utf-8")) == {"mode": "auto"}
 
 def test_the_directory_is_created_on_demand(sessions):
     assert not sessions.exists()
-    write_auto_mode(SESSION, True)
+    write_mode(SESSION, "auto")
     assert sessions.is_dir()
 
 def test_writing_keeps_the_other_keys(sessions):
     sessions.mkdir(parents=True)
     (sessions / f"{SESSION}.json").write_text('{"pid": 141269}', encoding="utf-8")
-    write_auto_mode(SESSION, True)
-    assert json.loads((sessions / f"{SESSION}.json").read_text(encoding="utf-8")) == {"pid": 141269, "auto": True}
+    write_mode(SESSION, "auto")
+    assert json.loads((sessions / f"{SESSION}.json").read_text(encoding="utf-8")) == {"pid": 141269, "mode": "auto"}
 
 @pytest.mark.parametrize("contents", ["", "not json", "[]", "null"])
 def test_writing_replaces_a_file_it_cannot_read(sessions, contents):
     sessions.mkdir(parents=True)
     (sessions / f"{SESSION}.json").write_text(contents, encoding="utf-8")
-    write_auto_mode(SESSION, True)
-    assert read_auto_mode(SESSION) is True
+    write_mode(SESSION, "auto")
+    assert read_mode(SESSION) == "auto"
 
 def test_writing_leaves_no_leftovers(sessions):
-    # The write goes through a temporary file: it must not survive the rename.
-    write_auto_mode(SESSION, True)
+    # One session, one file: nothing else is left behind in the sessions directory.
+    write_mode(SESSION, "auto")
     assert [path.name for path in sessions.iterdir()] == [f"{SESSION}.json"]
 
-def test_a_missing_file_reads_as_off():
-    assert read_auto_mode(SESSION) is False
+@pytest.mark.parametrize("mode", ["manual", "edit", "auto"])
+def test_every_mode_makes_the_round_trip(mode):
+    write_mode(SESSION, mode)
+    assert read_mode(SESSION) == mode
 
-@pytest.mark.parametrize("contents", ["", "not json", "[]", "null", '"auto"', "{}", '{"auto": false}'])
-def test_anything_but_a_recorded_on_reads_as_off(sessions, contents):
-    # Tolerant on purpose: failing the other way would hand the agent an unattended session in silence.
+def test_a_missing_file_reads_as_nothing():
+    assert read_mode(SESSION) is None
+
+@pytest.mark.parametrize("contents", ["", "not json", "[]", "null", '"mode"', "{}", '{"auto": true}'])
+def test_anything_without_a_recorded_mode_reads_as_nothing(sessions, contents):
+    # `{"auto": true}` is the previous format: it carries no mode, so it reads as nothing and the
+    # session falls back to manual. Erring towards more validation, never less.
     sessions.mkdir(parents=True)
     (sessions / f"{SESSION}.json").write_text(contents, encoding="utf-8")
-    assert read_auto_mode(SESSION) is False
+    assert read_mode(SESSION) is None
 
-@pytest.mark.parametrize("contents", ['{"auto": "yes"}', '{"auto": 1}'])
-def test_only_a_real_true_counts(sessions, contents):
-    assert read_auto_mode(SESSION) is False
+@pytest.mark.parametrize("contents", ['{"mode": 1}', '{"mode": true}', '{"mode": ["auto"]}'])
+def test_only_a_name_counts(sessions, contents):
+    sessions.mkdir(parents=True)
+    (sessions / f"{SESSION}.json").write_text(contents, encoding="utf-8")
+    assert read_mode(SESSION) is None
+
+def test_an_unknown_name_is_read_back_as_is(sessions):
+    # Storage does not judge the name; naming what it means is `Mode.of`'s job.
+    sessions.mkdir(parents=True)
+    (sessions / f"{SESSION}.json").write_text('{"mode": "config"}', encoding="utf-8")
+    assert read_mode(SESSION) == "config"
 
 # ============================================================================
 # The session id
@@ -85,8 +99,8 @@ def test_accepts_a_plain_id(session_id):
 
 def test_an_unusable_id_writes_nothing(sessions):
     with pytest.raises(ValueError):
-        write_auto_mode("../../evil", True)
+        write_mode("../../evil", "auto")
     assert not sessions.exists()
 
-def test_an_unusable_id_reads_as_off():
-    assert read_auto_mode("../../evil") is False
+def test_an_unusable_id_reads_as_nothing():
+    assert read_mode("../../evil") is None

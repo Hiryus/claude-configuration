@@ -5,6 +5,7 @@ from enum import Enum
 from pathlib import Path
 
 from models.parsing import ContextError
+from utils import session
 
 
 class Decision(Enum):
@@ -17,20 +18,21 @@ class Decision(Enum):
 
 class Mode(Enum):
     """
-    How much autonomy the call runs with, derived from the harness permission mode.
-    Source: https://code.claude.com/docs/en/permissions#permission-modes
+    How much autonomy the call runs with.
+    Carried by the session itself (`~/.claude/sessions/<id>.json`).
     """
     MANUAL = "manual"  # the user validates most calls
     EDIT = "edit"      # most edits are pre-approved
     AUTO = "auto"      # the agent runs unattended
 
     @staticmethod
-    def of(permission_mode: str) -> "Mode":
-        if permission_mode in ("default", "plan"):
-            return Mode.MANUAL
-        if permission_mode == "acceptEdits":
-            return Mode.EDIT
-        return Mode.AUTO
+    def of(name: str|None) -> "Mode":
+        """
+        The mode of that name.
+        Anything else (nothing recorded yet, a typo, a name from another version) is MANUAL.
+        """
+        wanted = (name or "").strip().lower()
+        return next((mode for mode in Mode if mode.value == wanted), Mode.MANUAL)
 
 @dataclass(frozen=True)
 class Context:
@@ -52,11 +54,12 @@ class Context:
             raise ContextError("the payload carries no `cwd`")
         if not project_root:
             raise ContextError("the `CLAUDE_PROJECT_DIR` environment variable is not set")
+        mode_name = session.read_mode(str(input_data.get("session_id") or ""))
         return Context(
             current_cwd=Path(cwd).resolve(),
             hook_event_name=input_data.get("hook_event_name", ""),
             intent=input_data.get("tool_input", {}).get("description") or "",
-            mode=Mode.of(input_data.get("permission_mode", "default")),
+            mode=Mode.of(mode_name),
             project_root=Path(project_root).resolve(),
             tool_name=input_data.get("tool_name", ""),
         )

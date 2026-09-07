@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import SupportsFloat, SupportsInt
 
-from utils.session import read_auto_mode, state_file
+from models.analyzer import Mode
+from utils.session import read_mode, state_file
 
 ESC = "\x1b"
 RESET = f"{ESC}[0m"
@@ -26,7 +27,7 @@ PIPE = f" {BLUE}|{RESET} "
 
 @dataclass
 class Status:
-    auto_mode:bool|None
+    mode:Mode|None
     cwd:Path
     effort_level:str
     model_id:str
@@ -100,13 +101,14 @@ def format_time_until(unix_ts:float) -> str|None:
         return None
 
 
-def read_auto_mode_of(session_id:str) -> bool|None:
+def read_mode_of(session_id:str) -> Mode|None:
     """
-    The auto mode of the session, or None when the payload carries no usable session id.
+    The mode of the session, or None when the payload carries no usable session id.
+    Unknown is not manual: the bar leaves the part out rather than name a mode nothing runs in.
     """
     if state_file(session_id) is None:
         return None
-    return read_auto_mode(session_id)
+    return Mode.of(read_mode(session_id))
 
 
 def read_input() -> Status:
@@ -129,7 +131,7 @@ def read_input() -> Status:
     cwd = workspace.get("current_dir") or input_data.get("cwd")
 
     return Status(
-        auto_mode=read_auto_mode_of(str(input_data.get("session_id") or "")),
+        mode=read_mode_of(str(input_data.get("session_id") or "")),
         cwd=Path(cwd) if cwd else Path.cwd(),
         effort_level=str(effort.get("level") or ""),
         model_id=str(model.get("id")),
@@ -148,11 +150,11 @@ def main():
     status = read_input()
     status_line_parts = [f"{GREY}repo:{RESET}{CYAN}{status.cwd.name}{RESET}"]
 
-    if status.auto_mode is not None:
-        if status.auto_mode:
-            status_line_parts.append(f"{GREY}auto:{RESET}{YELLOW}on{RESET}")
-        else:
-            status_line_parts.append(f"{GREY}auto:{RESET}off")
+    if status.mode is not None:
+        # The one part of the bar meant to catch the eye: manual is the resting state, the others are not.
+        color = {Mode.EDIT: YELLOW, Mode.AUTO: RED}.get(status.mode, "")
+        name = f"{color}{status.mode.value}{RESET}" if color else status.mode.value
+        status_line_parts.append(f"{GREY}mode:{RESET}{name}")
 
     ctx = f"{GREY}ctx:{RESET}{get_tokens_color(status.tokens_used)}{format_count(status.tokens_used)}{RESET}/{format_count(status.tokens_max)}"
     if status.tokens_used_pct > 0.0:

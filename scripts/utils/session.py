@@ -1,6 +1,9 @@
 """
-The per-session "auto" mode: set by the `auto` command, read back by everything that needs to know whether anyone is watching.
-It lives in `~/.claude/sessions/<session_id>.json`, one JSON object per session, our flag under the `auto` key.
+The per-session mode: set by the `mode` command, read back by everything that needs to know how much autonomy the session runs with.
+It lives in `~/.claude/sessions/<session_id>.json`, one JSON object per session, our name under the `mode` key.
+
+The file holds the raw name, not a `Mode` enum.
+This module stays the storage layer and returns the setting written in the file as str (or possibly None).
 """
 
 import json
@@ -11,19 +14,20 @@ SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
-def read_auto_mode(session_id:str) -> bool:
+def read_mode(session_id:str) -> str|None:
     """
-    True when the session was switched to auto mode.
-    Tolerant by design: a missing, unreadable or corrupt file means "not in auto mode".
+    The mode name recorded for the session, or None when there is nothing to read.
+    Tolerant by design: a missing, unreadable or corrupt file reads as "nothing recorded".
     """
     path = state_file(session_id)
     if path is None or not path.is_file():
-        return False
+        return None
     try:
         contents = path.read_text(encoding="utf-8")
-        return json.loads(contents).get("auto") is True
+        name = json.loads(contents).get("mode")
+        return name if isinstance(name, str) else None
     except (OSError, ValueError, AttributeError):
-        return False
+        return None
 
 def state_file(session_id:str) -> Path|None:
     """
@@ -33,7 +37,7 @@ def state_file(session_id:str) -> Path|None:
         return None
     return SESSIONS_DIR / f"{session_id}.json"
 
-def write_auto_mode(session_id:str, enabled:bool) -> None:
+def write_mode(session_id:str, mode:str) -> None:
     """
     Record the mode of one session.
     The other keys of the file, if any, are kept to allow further information recording.
@@ -51,6 +55,6 @@ def write_auto_mode(session_id:str, enabled:bool) -> None:
     if not isinstance(state, dict):
         state = {}
     # Add the information and write the file
-    state["auto"] = enabled
+    state["mode"] = mode
     with open(path, "w", encoding="utf-8") as file:
         json.dump(state, file, indent=2)

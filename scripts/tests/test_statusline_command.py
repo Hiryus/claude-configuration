@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import utils.session
 from statusline_command import main
-from utils.session import write_auto_mode
+from utils.session import write_mode
 
 SESSION = "6c194564-b08a-44dc-9661-8d05e07cb52d"
 
@@ -45,39 +45,51 @@ def render(monkeypatch, capsys, **payload) -> str:
 
 def segment(bar:str) -> str|None:
     """
-    The `auto:` part of the bar, stripped of its colors, or None when the bar carries none.
+    The `mode:` part of the bar, stripped of its colors, or None when the bar carries none.
     """
     plain = re.sub(r"\x1b\[[0-9;]*m", "", bar)
     for part in plain.split(" | "):
-        if part.startswith("auto:"):
+        if part.startswith("mode:"):
             return part
     return None
 
 # ============================================================================
-# The auto segment
+# The mode segment
 # ============================================================================
 
-def test_the_bar_says_off_while_the_mode_is_off(monkeypatch, capsys):
-    assert segment(render(monkeypatch, capsys)) == "auto:off"
+def test_the_bar_says_manual_when_nothing_was_recorded(monkeypatch, capsys):
+    assert segment(render(monkeypatch, capsys)) == "mode:manual"
 
-def test_the_bar_says_on_while_the_mode_is_on(monkeypatch, capsys):
-    write_auto_mode(SESSION, True)
-    assert segment(render(monkeypatch, capsys)) == "auto:on"
+@pytest.mark.parametrize("mode", ["manual", "edit", "auto"])
+def test_the_bar_names_the_recorded_mode(monkeypatch, capsys, mode):
+    write_mode(SESSION, mode)
+    assert segment(render(monkeypatch, capsys)) == f"mode:{mode}"
 
 def test_the_bar_follows_the_state_file(monkeypatch, capsys):
-    write_auto_mode(SESSION, True)
-    assert segment(render(monkeypatch, capsys)) == "auto:on"
-    write_auto_mode(SESSION, False)
-    assert segment(render(monkeypatch, capsys)) == "auto:off"
+    write_mode(SESSION, "auto")
+    assert segment(render(monkeypatch, capsys)) == "mode:auto"
+    write_mode(SESSION, "manual")
+    assert segment(render(monkeypatch, capsys)) == "mode:manual"
 
 def test_each_session_shows_its_own_mode(monkeypatch, capsys):
-    write_auto_mode(SESSION, True)
-    assert segment(render(monkeypatch, capsys, session_id="another-session")) == "auto:off"
+    write_mode(SESSION, "auto")
+    assert segment(render(monkeypatch, capsys, session_id="another-session")) == "mode:manual"
 
-def test_the_mode_is_colored_while_it_is_on(monkeypatch, capsys):
+def test_an_unknown_recorded_mode_shows_as_manual(monkeypatch, capsys):
+    # What the bar names is what the tool hooks will apply, not the raw file contents.
+    write_mode(SESSION, "config")
+    assert segment(render(monkeypatch, capsys)) == "mode:manual"
+
+def test_the_modes_that_are_not_the_resting_state_are_colored(monkeypatch, capsys):
     # The one part of the bar meant to catch the eye: unattended is not the resting state.
-    write_auto_mode(SESSION, True)
-    assert "\x1b[38;5;208mon\x1b[0m" in render(monkeypatch, capsys)
+    write_mode(SESSION, "auto")
+    assert "\x1b[31mauto\x1b[0m" in render(monkeypatch, capsys)
+    write_mode(SESSION, "edit")
+    assert "\x1b[33medit\x1b[0m" in render(monkeypatch, capsys)
+
+def test_manual_is_left_plain(monkeypatch, capsys):
+    write_mode(SESSION, "manual")
+    assert "\x1b[38;5;240mmode:\x1b[0mmanual" in render(monkeypatch, capsys)
 
 # ============================================================================
 # An unknown mode
@@ -91,17 +103,17 @@ def test_a_payload_without_a_session_id_says_nothing(monkeypatch, capsys):
 def test_an_id_that_is_not_a_safe_file_name_says_nothing(monkeypatch, capsys, session_id):
     assert segment(render(monkeypatch, capsys, session_id=session_id)) is None
 
-def test_an_unreadable_state_file_says_off(sessions, monkeypatch, capsys):
+def test_an_unreadable_state_file_says_manual(sessions, monkeypatch, capsys):
     sessions.mkdir(parents=True)
     (sessions / f"{SESSION}.json").write_text("not json", encoding="utf-8")
-    assert segment(render(monkeypatch, capsys)) == "auto:off"
+    assert segment(render(monkeypatch, capsys)) == "mode:manual"
 
 # ============================================================================
 # The rest of the bar
 # ============================================================================
 
 def test_the_other_parts_are_left_alone(monkeypatch, capsys):
-    write_auto_mode(SESSION, True)
+    write_mode(SESSION, "auto")
     bar = render(monkeypatch, capsys)
     assert "repo:" in bar and "adventure" in bar
     assert "ctx:" in bar
@@ -109,8 +121,8 @@ def test_the_other_parts_are_left_alone(monkeypatch, capsys):
 
 def test_the_mode_comes_right_after_the_repo(monkeypatch, capsys):
     bar = render(monkeypatch, capsys)
-    assert bar.index("auto:") > bar.index("repo:")
-    assert bar.index("auto:") < bar.index("ctx:")
+    assert bar.index("mode:") > bar.index("repo:")
+    assert bar.index("mode:") < bar.index("ctx:")
 
 def test_an_empty_payload_still_renders(monkeypatch, capsys):
     # The bar is drawn on every keystroke: a missing key must never take the whole line down.
