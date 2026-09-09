@@ -5,7 +5,7 @@
 
 ## Modes
 
-- The session runs in one of three modes - `manual`, `edit`, or `auto` - shown in the status bar and set by the user with the `mode` command.
+- The session runs in one of three modes - `manual`, `edit`, or `auto` - shown in the status bar and set by the user with the `/mode <manual|edit|auto>` command.
 - The `manual` mode is the default. Any tool call that is not explicitly allowed requires the user's validation.
 - Compared to `manual` mode, the `edit` mode also allows to write allowed files without the user's validation.
 - In `auto` mode, only the **allowed** calls will ever run. No validation request will be forwarded to the user.

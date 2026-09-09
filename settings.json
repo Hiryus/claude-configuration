@@ -31,13 +31,12 @@
       "NotebookEdit",
       "PowerShell",
       "PushNotification",
-      "RemoteTrigger",
-      "Read(.env)"
+      "RemoteTrigger"
     ],
     "defaultMode": "default",
     "disableBypassPermissionsMode": "disable"
   },
-  "model": "sonnet",
+  "model": "opus",
   "disableClaudeAiConnectors": true,
   "hooks": {
     "PreToolUse": [
@@ -90,7 +89,8 @@
   "defaultShell": "bash",
   "statusLine": {
     "type": "command",
-    "command": "uv run python ~/.claude/scripts/statusline_command.py"
+    "command": "uv run python ~/.claude/scripts/statusline_command.py",
+    "refreshInterval": 15
   },
   "enabledPlugins": {},
   "spinnerTipsEnabled": false,

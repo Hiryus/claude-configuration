@@ -1,5 +1,5 @@
 """
-The per-session mode: set by the `mode` command, read back by everything that needs to know how much autonomy the session runs with.
+The per-session mode: set by the `/mode` command, read back by everything that needs to know how much autonomy the session runs with.
 It lives in `~/.claude/sessions/<session_id>.json`, one JSON object per session, our name under the `mode` key.
 
 The file holds the raw name, not a `Mode` enum.

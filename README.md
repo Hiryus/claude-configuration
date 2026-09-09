@@ -40,7 +40,7 @@ The claude configuration define several hooks:
 Any direct access to a file (via `Edit`, `Read`, `Write`, or `Grep`) is validated by the `pre_file_access.py` script and any bash command is validated by the `pre_shell.py` script implemented based on [specifications rules](SECURITY.md).
 
 The `user_prompt_submit.py` hook has two purposes:
-1. It intercepts the `mode <manual|edit|auto>` command to set the mode of the current session (a bare `mode` reports it).
+1. It intercepts the `/mode <manual|edit|auto>` slash command to set the mode of the current session (`/mode info`, or `/mode` alone, reports it). The prompt is stopped there and never reaches the model.
 2. For any other prompt, it injects a system note into the context when the session runs in "auto" mode.
 The mode is written in `~/.claude/sessions/<session_id>.json` and is the only thing the tool hooks consult: the claude code permission mode is not used.
 

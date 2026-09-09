@@ -41,8 +41,11 @@ Every call runs in exactly one mode, carried by the session itself:
 - In **edit** mode, reads and writes are automatically **allowed** based on the [file rules](#1-file-rules).
 - The **auto** mode **allows** the same calls as the **edit** mode, but also transforms any **ask** into a **deny**, effectively forbidding interractive validations.
 
-The mode is set with the `mode <manual|edit|auto>` prompt command and recorded under the `mode` key of `~/.claude/sessions/<session_id>.json`.
+The mode is set with the `/mode <manual|edit|auto>` slash command and recorded under the `mode` key of `~/.claude/sessions/<session_id>.json`.
 The claude code permission mode plays no part in it.
+
+The command is handled entirely by the `UserPromptSubmit` hook, which stops the prompt before it reaches the model: the `skills/mode/SKILL.md` file only registers the name for the harness and carries no instruction.
+**Only the user switches the mode**: the skill is marked `disable-model-invocation` and the model must never write the session file itself.
 
 A session that records no mode - or a name that no mode answers to - runs in **manual** mode: an unknown session asks rather than acts on its own.
 

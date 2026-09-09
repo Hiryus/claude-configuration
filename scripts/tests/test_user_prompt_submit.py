@@ -57,61 +57,86 @@ def injected(prompt:str, session_id:str = SESSION) -> str|None:
 
 @pytest.mark.parametrize("mode", ["manual", "edit", "auto"])
 def test_switching_stops_the_prompt_and_says_so(mode):
-    assert blocked(f"mode {mode}") == f"Mode is now {mode.upper()} for this session."
+    assert blocked(f"/mode {mode}") == f"Mode is now {mode.upper()} for this session."
 
 @pytest.mark.parametrize("mode", ["manual", "edit", "auto"])
 def test_switching_records_the_mode(mode):
-    run(f"mode {mode}")
+    run(f"/mode {mode}")
     assert read_mode(SESSION) == mode
 
 def test_the_mode_survives_between_prompts():
-    run("mode auto")
+    run("/mode auto")
     assert injected("carry on") == AUTO_MODE_NOTE
-    run("mode edit")
+    run("/mode edit")
     assert injected("carry on") is None
 
 @pytest.mark.parametrize("prompt", [
-    "mode auto please",
-    "please set mode auto",
-    "modes auto",
-    "mode autoo",
-    "mode auto edit",
-    "mode config",
-    "the `mode auto` command",
+    "/mode auto please",
+    "please set /mode auto",
+    "run /mode auto for me",
+    "/modes auto",
+    "/mode autoo",
+    "/mode auto edit",
+    "/mode config",
+    "the `/mode auto` command",
 ])
 def test_only_the_command_alone_counts(prompt):
     # A prompt that merely mentions the command is an ordinary prompt: swallowing it would lose work.
     assert blocked(prompt) is None
 
+@pytest.mark.parametrize("prompt", ["mode", "mode auto", "mode info"])
+def test_the_bare_word_form_is_gone(prompt):
+    # The command is the slash one now. The bare word is an ordinary prompt again, and records nothing.
+    assert blocked(prompt) is None
+    assert read_mode(SESSION) is None
+
 def test_an_unknown_mode_name_is_not_the_command():
     # It must not be recorded either: an unrecognised name would read back as manual anyway.
-    run("mode config")
+    run("/mode config")
     assert read_mode(SESSION) is None
 
 def test_a_command_is_never_answered_with_the_note():
-    run("mode auto")
-    assert injected("mode manual") is None
+    run("/mode auto")
+    assert injected("/mode manual") is None
 
 # ============================================================================
 # Reporting the mode
 # ============================================================================
+# `/mode info` is the explicit form and `/mode` alone the short one: they must answer the same thing,
+# so every case below runs against both.
 
-def test_bare_mode_reports_the_current_mode():
+REPORTS = pytest.mark.parametrize("prompt", ["/mode", "/mode info"])
+
+@REPORTS
+def test_reporting_gives_the_current_mode(prompt):
     write_mode(SESSION, "edit")
-    assert blocked("mode") == "Mode is EDIT for this session."
+    assert blocked(prompt) == "Mode is currently EDIT."
 
-def test_bare_mode_reports_manual_when_nothing_was_ever_set():
-    assert blocked("mode") == "Mode is MANUAL for this session."
+@REPORTS
+def test_reporting_gives_manual_when_nothing_was_ever_set(prompt):
+    assert blocked(prompt) == "Mode is currently MANUAL."
 
-def test_bare_mode_reports_what_the_hooks_will_apply():
+@REPORTS
+def test_reporting_gives_what_the_hooks_will_apply(prompt):
     # An unknown recorded name is manual for the tool hooks, so the bar-side answer says manual too.
     write_mode(SESSION, "config")
-    assert blocked("mode") == "Mode is MANUAL for this session."
+    assert blocked(prompt) == "Mode is currently MANUAL."
 
-def test_reporting_changes_nothing():
+@REPORTS
+def test_reporting_changes_nothing(prompt):
     write_mode(SESSION, "auto")
-    run("mode")
+    run(prompt)
     assert read_mode(SESSION) == "auto"
+
+def test_info_is_never_recorded_as_a_mode():
+    # `info` is not a mode: recording it would read back as manual and silently drop the real one.
+    write_mode(SESSION, "auto")
+    run("/mode info")
+    assert read_mode(SESSION) == "auto"
+
+@pytest.mark.parametrize("prompt", ["/mode information", "/mode info auto"])
+def test_only_the_report_command_alone_counts(prompt):
+    assert blocked(prompt) is None
 
 # ============================================================================
 # Ordinary prompts
@@ -149,13 +174,14 @@ def test_a_missing_prompt_is_an_ordinary_prompt():
 # tested in test_session.py. Here only what the hook answers when there is none.
 
 def test_a_command_without_a_session_id_is_stopped_and_explained():
-    reason = blocked("mode auto", session_id="")
+    reason = blocked("/mode auto", session_id="")
     assert reason is not None
     assert "no session id" in reason
 
-def test_a_report_without_a_session_id_answers_manual():
+@REPORTS
+def test_a_report_without_a_session_id_answers_manual(prompt):
     # Nothing can be recorded for that session, so nothing but manual can be applied to it.
-    assert blocked("mode", session_id="") == "Mode is MANUAL for this session."
+    assert blocked(prompt, session_id="") == "Mode is currently MANUAL."
 
 def test_an_ordinary_prompt_without_a_session_id_goes_through():
     assert run("what does this do?", session_id="") == {}
