@@ -142,6 +142,22 @@ def test_readonly_allowed(cmd):
 def test_writing_filters_not_in_the_allow_list(cmd):
     assert run(command=cmd) == "ask"
 
+@pytest.mark.parametrize("cmd", [
+    "which python3",
+    "which -a python3",         # `-a`/`-s` take no value: nothing can swallow a path
+    "which /usr/bin/env",       # §2.8: operands are not path-checked, even outside the perimeter
+    "which ~/.ssh/id_rsa",      # ... and a non-executable prints nothing anyway
+])
+def test_which_allowed(cmd):
+    assert run(command=cmd) == "allow"
+
+@pytest.mark.parametrize(("cmd", "decision"), [
+    ("which x > .env", "deny"),          # a redirect is checked whatever the binary
+    ("cat $(which python3)", "ask"),     # §2.5: the resolved path stays dynamic
+])
+def test_which_does_not_lift_the_other_rules(cmd, decision):
+    assert run(command=cmd) == decision
+
 def test_readonly_double_dash_path_checks_the_operand():
     # §5.2/§4.1.3: `--` must reach the untabled read-only group too, so
     # -weird.pem is path-checked instead of being read as a flag.

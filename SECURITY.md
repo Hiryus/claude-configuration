@@ -186,8 +186,12 @@ The `gh` command is **denied** in favor of the github MCP.
 
 ### 2.8. Read binaries
 
-The `echo`, `printf`, `pwd`, `sleep`, and `tr` binaries are **allowed**.
+The `echo`, `printf`, `pwd`, `sleep`, `tr`, and `which` binaries are **allowed**.
 - Simple variable substitutions (`$VAR` or `${VAR}`) are **allowed** as argument to these commands.
+- Their arguments are _not_ path-checked: `which` takes command names, not files, so checking them against the [file rules](#1-file-rules) would deny `which python3` on the sole ground of the current directory.
+
+NB: `which` is the only allowed binary whose targets escape the perimeter.
+It is accepted because it never opens a file: it only prints the path of the _executables_ it resolves, and prints nothing for anything else (a credential file is not executable, and directories are skipped too).
 
 The `cat`, `cmp`, `cut`, `diff`, `file`, `head`, `jq`, `less`, `ls`, `more`, `tail`, `test`, and `wc` binaries are allowed too if they respect the [file rules](#1-file-rules).
 - For the `grep` binary, positional arguments are treated as _read_ accesses, minus the search pattern itself.

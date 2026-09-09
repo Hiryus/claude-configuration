@@ -52,7 +52,7 @@ def check_command(command: CommandLine, references: list[Reference], context: Co
     if command.base in ["cd", "popd", "pushd"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
-    if command.base in ["echo", "printf", "pwd", "sleep", "tr"]:
+    if command.base in ["echo", "printf", "pwd", "sleep", "tr", "which"]:
         return (Decision.ALLOW, f"The `{command.base}` command is allowed.")
 
     if command.base in ("docker", "podman", *LEGACY_COMPOSE_BASES):
