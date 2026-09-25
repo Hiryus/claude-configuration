@@ -6,16 +6,23 @@ Personal configuration and scripts for claude code.
 ├─ agents/                   - the agents definitions
 ├─ skills/                   - the kills definitions (commands are deprecated and now defiend as skills)
 ├─ scripts/                  - the agents definitions
-|  ├─ analyzers/             - the per-binary policy checks (docker, find, git, grep, readonly, sed)
-|  ├─ models/                - the models shared by all the scripts
-|  ├─ parsers/               - the bash lexing and per-binary argument grammars
-|  ├─ templates/             - the message templates used by the various hooks
-|  ├─ utils/                 - the pure helpers (filesystem paths, message formatting)
-|  ├─ generic.py             - the command-agnostic policy (file rules, access checks) and the hook response
-|  ├─ pre_file_access.py     - the hook to control and secure files access from the Read/Edit/Write tools
-|  ├─ pre_shell.py           - the hook to control and secure bash calls
-|  ├─ post_markdown.py       - the hook to post-process markdown table
-|  └─ statusline_command.py  - the script rendering the status bar in claude code
+|  ├─ agnostic/              - the business rules, free of any provider or I/O concern
+|  |  ├─ analyzers/          - the per-binary policy checks (docker, find, git, grep, readonly, sed)
+|  |  ├─ models/             - the models shared by all the scripts (context, decision, mode, parsing, grammar)
+|  |  ├─ parsers/            - the bash lexing and per-binary argument grammars
+|  |  ├─ templates/          - the message templates used by the policy
+|  |  ├─ utils/              - the pure helpers (filesystem paths, message formatting)
+|  |  ├─ file_access.py      - the file access analysis
+|  |  ├─ generic.py          - the command-agnostic policy (file rules, access checks, mode rules)
+|  |  └─ shell.py            - the bash command analysis
+|  ├─ claude/                - the claude code adapters: payload parsing, hook responses, entry points
+|  |  ├─ utils/              - the context factory, hook response and session storage
+|  |  ├─ pre_file_access.py  - the hook to control and secure files access from the Read/Edit/Write tools
+|  |  ├─ pre_shell.py        - the hook to control and secure bash calls
+|  |  ├─ post_markdown.py    - the hook to post-process markdown table
+|  |  ├─ user_prompt_submit.py - the hook handling the `/mode` command and the auto mode note
+|  |  └─ statusline_command.py - the script rendering the status bar in claude code
+|  └─ tests/                 - `agnostic/` tests the policy from a plain context, `claude/` the payload to response
 ├─ SECURITY.md               - the security rules specifications
 └─ setings.json              - the claude code central configuration
 ```
@@ -32,10 +39,11 @@ Personal configuration and scripts for claude code.
 
 ## How it works
 
-The claude configuration define several hooks:
-- `scripts/pre_file_access.py` fires before the `Edit|Read|Write|Grep` tool calls,
-- `scripts/pre_shell.py` fires before the `Bash` tool calls.
-- `scripts/user_prompt_submit.py` fires before all the user's prompts.
+The claude configuration define several hooks, invoked as modules from `scripts/`
+(`uv run --directory ~/.claude/scripts python -m claude.<hook>`):
+- `claude/pre_file_access.py` fires before the `Edit|Read|Write|Grep` tool calls,
+- `claude/pre_shell.py` fires before the `Bash` tool calls.
+- `claude/user_prompt_submit.py` fires before all the user's prompts.
 
 Any direct access to a file (via `Edit`, `Read`, `Write`, or `Grep`) is validated by the `pre_file_access.py` script and any bash command is validated by the `pre_shell.py` script implemented based on [specifications rules](SECURITY.md).
 
@@ -56,7 +64,7 @@ It injects the current mode (manual/edit/auto) and useful information like the c
 The analysis is done in three passes:
 1. **Lexing** (`parsers/bash.py`) turns the bash prompt into `CommandLine(program, args[], assignments[], redirects[])` objects, one per command, each word a `Token` tagged with the shell expansions it is built from. Grammar only, no policy.
 2. **Grammar** (`models/grammar.py`, `parsers/arguments.py`) pairs a `CommandLine`'s words against a binary's `CommandSyntax` table (aliases, flags, subcommands) into an `Invocation(cmd_parts[], arguments[])`. A binary with no table is still parsed, with every word an operand — this is not a fallback, it is what makes `--` safe by default. `find` is the documented exception: it is an expression grammar, not getopt, so it gets its own zone walker instead of a `CommandSyntax` table.
-3. **Policy** (`analyzers/*.py`, `pre_shell.py`) matches the `Invocation` against the [specification rules](SECURITY.md) to return a `Decision(ALLOW|ASK|DENY)` and a `reason(string)`. Each supported binary has its own `analyzers/*.py`; an unrecognised one is analyzed directly and usually asks for human validation.
+3. **Policy** (`analyzers/*.py`, `shell.py`) matches the `Invocation` against the [specification rules](SECURITY.md) to return a `Decision(verdict=ALLOW|ASK|DENY, reason=string)`. Each supported binary has its own `analyzers/*.py`; an unrecognised one is analyzed directly and usually asks for human validation.
 
 ## Useful links
 

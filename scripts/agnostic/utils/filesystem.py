@@ -1,0 +1,115 @@
+import glob
+import os
+import sys
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from agnostic.models.parsing import Access, Reference
+
+
+def expand_glob(path_text: str, cwd: Path) -> list[Path] | None:
+    """
+    Expand a glob to the concrete paths it currently matches, using bash's default semantics (no globstar, no dotglob): `*` and `**` don't cross a `/` on their own, and a leading `*` skips dotfiles unless the pattern segment itself starts with `.`.
+
+    Returns None -- "don't trust this as positive evidence" -- when:
+      - the pattern uses syntax Python's glob doesn't understand (braces, extglob), since it would silently treat it as literal characters and could under-report matches that bash would actually expand to.
+      - the anchored pattern isn't a real filesystem path on this OS (e.g. a POSIX-style absolute path while running on Windows).
+
+    An empty list is a real (if negative) result, whether the pattern matches nothing in a real directory or the directory itself doesn't exist: glob.glob() returns [] either way without erroring, and in both cases there's nothing real for the pattern to disclose right now.
+    """
+    if any(ch in path_text for ch in "{}()"):
+        return None
+    anchored = standardize(path_text, cwd)
+    if not isinstance(anchored, Path):
+        return None
+    return [Path(match) for match in glob.glob(str(anchored), recursive=False)]
+
+def expand_references(references: list[Reference], cwd: Path) -> list[Reference]:
+    """
+    Replace every glob reference with the concrete paths it matches.
+    A pattern that cannot be trusted is kept as-is, so it is later reported as an unresolved glob rather than silently vetted as a literal name.
+    """
+    expanded = []
+    for ref in references:
+        if ref.dynamic or not has_glob(ref.text):
+            # A dynamic path is not the pattern bash will glob, so expanding it here would match on
+            # the wrong text. It is kept whole and reported as dynamic.
+            expanded.append(ref)
+            continue
+        matches = expand_glob(ref.text, cwd)
+        if matches is None:
+            expanded.append(ref)  # can't trust expansion -- keep as unresolved glob
+        elif not matches and ref.access is Access.WRITE:
+            expanded.append(ref)  # nullglob-off: bash would still write the literal, unverified name
+        else:
+            expanded.extend(Reference(access=ref.access, text=str(m)) for m in matches)
+    return expanded
+
+def has_glob(path_text: str) -> bool:
+    """
+    A path with shell glob metacharacters expands at runtime, so the hook only sees the literal pattern (e.g. `*` never matches is_secret).
+    Such patterns cannot be verified statically.
+    Includes brace expansion (`{a,b}`) and extglob (`!(a)`, `@(a|b)`, ...): bash expands both, but expand_glob can't, so they must still be routed there to fall back to "can't verify".
+    """
+    return any(ch in path_text for ch in "*?[{}()")
+
+def in_harness(path: Path, harness_root: Path) -> bool:
+    if not isinstance(path, Path):
+        return False
+    return path.is_relative_to(harness_root)
+
+def in_project(path: Path, project_root: Path) -> bool:
+    return path.is_relative_to(project_root)
+
+def is_git_dir(path: Path) -> bool:
+    """
+    True for the `.git` directory itself and anything under it, at any depth.
+    """
+    return any(part.lower() == ".git" for part in path.parts)
+
+def is_secret(path: Path) -> bool:
+    name = path.name.lower()
+    if sys.platform == "win32":
+        name = name.rstrip(".")  # Windows ignores a trailing dot, so ".env." opens ".env"
+    if name.endswith((".example", ".sample", ".template")):
+        return False
+    if os.path.splitext(name)[1] in [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"]:
+        return True
+    if name in [".env", ".env.local", ".env.prod", ".env.production"]:
+        return True
+    if name in [".htpasswd", ".netrc", ".npmrc", ".pgpass"]:
+        return True
+    if name in [".credentials.json", ".claude.json"]:
+        return True
+    if any(part.lower() == ".ssh" for part in path.parts):
+        return True
+    return name in ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]
+
+def is_tmp_file(path: Path) -> bool:
+    if sys.platform == "win32" and path.is_relative_to(Path(os.path.expandvars("%LOCALAPPDATA%\\Temp"))):
+        return True
+    if sys.platform == "win32" and path.is_relative_to(Path("C:\\Windows\\Temp")):
+        return True
+    return path.is_relative_to(PurePosixPath("/tmp")) or path.is_relative_to(PurePosixPath("/var/tmp")) or path.is_relative_to(PurePosixPath("/dev/null"))
+
+def standardize(input_path: str, cwd: Path) -> Path:
+    """
+    Turn a written path into the real one it designates, anchoring a relative path on the current directory (which moves with `cd`).
+    Symlinks are followed, like the kernel does for a path handed to a command.
+
+    Only `~` is expanded. A `$VAR` is deliberately left literal: the hook's environment is not the
+    shell's, so resolving it would invent a target. Such a path is caught as dynamic instead (rule 2.5).
+    """
+    input_path = os.path.expanduser(input_path)
+    # Handle POSIX paths on Windows
+    if sys.platform == "win32" and input_path.startswith("/"):
+        input_path = os.path.normpath(input_path)
+        path = PurePosixPath(PureWindowsPath(input_path).as_posix())
+        # Special case to convert CYGWIN paths like "/c/..." to Windows paths "C:\..."
+        if len(path.parts) >= 2 and path.parts[0] == "/" and len(path.parts[1]) == 1 and path.parts[1].isalpha():
+            return Path(f"{path.parts[1].upper()}:\\", *path.parts[2:])
+        return Path(path)
+    # Handle normal paths
+    if not os.path.isabs(input_path):
+        return (cwd / input_path).resolve()
+    else:
+        return Path(input_path).resolve()

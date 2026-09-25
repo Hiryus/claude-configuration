@@ -1,0 +1,34 @@
+from agnostic.generic import check_access
+from agnostic.models.context import Context
+from agnostic.models.decision import Decision
+from agnostic.models.parsing import Access, CommandLine, Reference
+from agnostic.parsers import find
+
+
+def validate(command:CommandLine, context:Context) -> Decision:
+    """
+    `find` is an expression grammar, not getopt: leading flags, then the search roots, then the expression.
+    The files it reads are the roots; expression values (`-name '*.py'`) are patterns, never references.
+    """
+    invocation = find.parse(command)
+    references = []
+
+    if any(x.name == "exec" for x in invocation.arguments):
+        return Decision.deny("Using the `-exec` argument with `find` is forbidden.")
+
+    if any(x.name == "delete" for x in invocation.arguments):
+        return Decision.deny("Using the `-delete` argument with `find` is forbidden.")
+
+    if any(x.name == "output-file" for x in invocation.arguments):
+        return Decision.deny("Using `-fls`/`-fprint`/`-fprint0`/`-fprintf` with `find` is forbidden.")
+
+    leading_flags = ("debug", "optimization", "symlinks-following")
+    for arg in invocation.arguments:
+        if arg.positional:
+            if arg.value and arg.value not in ("!", "(", ")"):
+                references.append(Reference(access=Access.READ, text=arg.value, expansions=arg.expansions))
+        elif arg.name not in leading_flags:
+            # The expression has started: later words are predicate values (`-newer FILE`, `-size +1M`), never roots.
+            break
+
+    return check_access(command, references, context)

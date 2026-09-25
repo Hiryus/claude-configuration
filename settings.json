@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --with bashlex python ~/.claude/scripts/pre_shell.py"
+            "command": "uv run --directory ~/.claude/scripts --with bashlex python -m claude.pre_shell"
           }
         ]
       },
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python ~/.claude/scripts/pre_file_access.py"
+            "command": "uv run --directory ~/.claude/scripts python -m claude.pre_file_access"
           }
         ]
       }
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python ~/.claude/scripts/post_markdown.py"
+            "command": "uv run --directory ~/.claude/scripts python -m claude.post_markdown"
           }
         ]
       }
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python ~/.claude/scripts/user_prompt_submit.py"
+            "command": "uv run --directory ~/.claude/scripts python -m claude.user_prompt_submit"
           }
         ]
       }
@@ -89,7 +89,7 @@
   "defaultShell": "bash",
   "statusLine": {
     "type": "command",
-    "command": "uv run python ~/.claude/scripts/statusline_command.py",
+    "command": "uv run --directory ~/.claude/scripts python -m claude.statusline_command",
     "refreshInterval": 15
   },
   "enabledPlugins": {},
