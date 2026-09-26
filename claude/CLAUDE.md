@@ -12,7 +12,7 @@
 
 ## Tools usage
 
-The `Bash`, `Edit`, `Read`, and `Write` tools have specific restrictions listed in `~/.claude/SECURITY.md`.
+The `Bash`, `Edit`, `Read`, and `Write` tools have specific restrictions listed in `~/ai-harness/SECURITY.md`.
 - Read this file before using them.
 - Always use an **allowed** command when possible to avoid asking for the user validation.
   Especially, if you need to run a bash command that is not **allowed** by default, run it inside a docker container.

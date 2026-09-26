@@ -15,6 +15,7 @@
       "mcp__github__list_pull_requests",
       "mcp__github__search_pull_requests",
       "WebFetch(domain:docs.claude.com)",
+      "WebFetch(domain:opencode.ai)",
       "WebSearch"
     ],
     "deny": [
@@ -45,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ~/.claude/scripts --with bashlex python -m claude.pre_shell"
+            "command": "uv run --directory ~/.claude/scripts python -m claude.pre_shell"
           }
         ]
       },

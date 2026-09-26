@@ -20,7 +20,7 @@ HARNESS = Path("/opt/some-harness")
 
 
 def context(mode=Mode.MANUAL, intent="List the project files") -> Context:
-    return Context(current_cwd=PROJECT, harness_root=HARNESS, intent=intent, mode=mode, project_root=PROJECT)
+    return Context(current_cwd=PROJECT, harness_roots=[HARNESS], intent=intent, mode=mode, project_root=PROJECT)
 
 def verdict(command:str, **kwargs) -> Verdict:
     return analyze(command, context(**kwargs)).verdict
@@ -38,7 +38,7 @@ def test_unknown_command_asks():
 def test_auto_mode_is_enforced_by_the_analysis_itself():
     decision = analyze("make build", context(mode=Mode.AUTO))
     assert decision.verdict is Verdict.DENY
-    assert str(HARNESS / "SECURITY.md") in decision.reason
+    assert "~/ai-harness/SECURITY.md" in decision.reason
 
 def test_write_to_harness_is_denied():
     assert verdict("echo x > /opt/some-harness/settings.json", mode=Mode.EDIT) is Verdict.DENY

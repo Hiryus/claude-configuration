@@ -1,0 +1,8 @@
+# allowlist: ~/.claude points here, everything else is runtime state (credentials, history, transcripts...)
+/*
+!/.gitignore
+!/CLAUDE.md
+!/settings.json
+!/agents
+!/skills
+!/scripts

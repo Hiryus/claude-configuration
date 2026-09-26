@@ -10,4 +10,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv run --with bashlex --with pytest pytest scripts/tests
+      - run: uv run --directory scripts pytest tests

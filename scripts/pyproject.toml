@@ -1,0 +1,12 @@
+[project]
+name = "ai-harness-scripts"
+version = "0.1.0"
+description = "Hooks and policy scripts shared by the AI harnesses"
+requires-python = ">=3.12"
+dependencies = ["bashlex"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false

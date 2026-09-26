@@ -21,7 +21,7 @@ def context_of(input_data: dict, environ: Mapping[str, str] = os.environ) -> Con
     mode_name = session.read_mode(str(input_data.get("session_id") or ""))
     return Context(
         current_cwd=Path(cwd).resolve(),
-        harness_root=Path.home() / ".claude",
+        harness_roots=[Path.home() / "ai-harness", (Path.home() / ".claude").resolve()],
         intent=input_data.get("tool_input", {}).get("description") or "",
         mode=Mode.of(mode_name),
         project_root=Path(project_root).resolve(),

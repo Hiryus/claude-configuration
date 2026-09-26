@@ -20,8 +20,11 @@ PROJECT = Path("/proj")
 HARNESS = Path("/opt/some-harness")
 
 
-def context(mode=Mode.MANUAL, project_root=PROJECT, harness_root=HARNESS) -> Context:
-    return Context(current_cwd=project_root, harness_root=harness_root, mode=mode, project_root=project_root)
+SHARED = Path("/opt/shared-harness")
+
+
+def context(mode=Mode.MANUAL, project_root=PROJECT) -> Context:
+    return Context(current_cwd=project_root, harness_roots=[HARNESS, SHARED], mode=mode, project_root=project_root)
 
 def verdict(file_path:str, access:Access, **kwargs) -> Verdict:
     return analyze(file_path, access, context(**kwargs)).verdict
@@ -41,6 +44,10 @@ def test_harness_root_comes_from_the_context():
     assert verdict("/opt/some-harness/settings.json", Access.READ) is Verdict.ALLOW
     assert verdict("/opt/some-harness/settings.json", Access.WRITE, mode=Mode.EDIT) is Verdict.DENY
 
+def test_every_harness_root_is_protected():
+    assert verdict("/opt/shared-harness/scripts/hook.py", Access.READ) is Verdict.ALLOW
+    assert verdict("/opt/shared-harness/scripts/hook.py", Access.WRITE, mode=Mode.EDIT) is Verdict.DENY
+
 def test_harness_as_project_is_writable():
     assert verdict("/opt/some-harness/settings.json", Access.WRITE, mode=Mode.EDIT, project_root=HARNESS) is Verdict.ALLOW
 
@@ -50,5 +57,5 @@ def test_outside_project_asks():
 def test_auto_mode_turns_ask_into_deny_and_points_to_the_harness_rules():
     decision = analyze("/etc/hosts", Access.READ, context(mode=Mode.AUTO))
     assert decision.verdict is Verdict.DENY
-    assert str(HARNESS / "SECURITY.md") in decision.reason
+    assert "~/ai-harness/SECURITY.md" in decision.reason
     assert "/etc/hosts" in decision.reason

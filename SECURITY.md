@@ -82,17 +82,17 @@ The agent is **denied** to **write** files in any `.git` directory locations, in
 
 ### 1.3. No harness modifications
 
-The agent is **denied** to **write** files in its harness directory (`~/.claude`).
+The agent is **denied** to **write** files in its harness directories: `~/.claude` and the harness repository holding the hooks (`~/ai-harness`).
 
 **Reason**: Modifying the harness files would allow the agent to lift its own restrictions.  
 
-When the project directory _is_ the harness directory, **write** are **ask** in **manual** mode and **allowed** in the other modes.
+When the project directory _is_ a harness directory, **write** are **ask** in **manual** mode and **allowed** in the other modes.
 
 ### 1.4. Allowed folders
 
 The agent is **allowed** to **read** files in the following locations, including subfolders (with exceptions listed above):
 - The temporary directories (`/tmp`, `/var/tmp`, etc.),
-- The harness directory (`~/.claude`),
+- The harness directories (`~/.claude` and the harness repository, cf. §1.3),
 - The current project.
 
 In **edit mode**, the agent is **allowed** to **write** files in the following locations, including subfolders (with exceptions listed above):

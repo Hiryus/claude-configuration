@@ -52,10 +52,10 @@ def has_glob(path_text: str) -> bool:
     """
     return any(ch in path_text for ch in "*?[{}()")
 
-def in_harness(path: Path, harness_root: Path) -> bool:
+def in_harness(path: Path, harness_roots: list[Path]) -> bool:
     if not isinstance(path, Path):
         return False
-    return path.is_relative_to(harness_root)
+    return any(path.is_relative_to(root) for root in harness_roots)
 
 def in_project(path: Path, project_root: Path) -> bool:
     return path.is_relative_to(project_root)

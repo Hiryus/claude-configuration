@@ -1,39 +1,59 @@
-Personal configuration and scripts for claude code.
+Personal configuration and scripts for various AI harness.
 
 ## File structure
 
 ```
-├─ agents/                   - the agents definitions
-├─ skills/                   - the kills definitions (commands are deprecated and now defiend as skills)
-├─ scripts/                  - the agents definitions
-|  ├─ agnostic/              - the business rules, free of any provider or I/O concern
-|  |  ├─ analyzers/          - the per-binary policy checks (docker, find, git, grep, readonly, sed)
-|  |  ├─ models/             - the models shared by all the scripts (context, decision, mode, parsing, grammar)
-|  |  ├─ parsers/            - the bash lexing and per-binary argument grammars
-|  |  ├─ templates/          - the message templates used by the policy
-|  |  ├─ utils/              - the pure helpers (filesystem paths, message formatting)
-|  |  ├─ file_access.py      - the file access analysis
-|  |  ├─ generic.py          - the command-agnostic policy (file rules, access checks, mode rules)
-|  |  └─ shell.py            - the bash command analysis
-|  ├─ claude/                - the claude code adapters: payload parsing, hook responses, entry points
-|  |  ├─ utils/              - the context factory, hook response and session storage
-|  |  ├─ pre_file_access.py  - the hook to control and secure files access from the Read/Edit/Write tools
-|  |  ├─ pre_shell.py        - the hook to control and secure bash calls
-|  |  ├─ post_markdown.py    - the hook to post-process markdown table
+├─ claude/                     - the claude code directory (`~/.claude` links here), only the config is versioned
+|  ├─ agents/                  - the agents definitions
+|  ├─ scripts                  - symbolic link to ../scripts
+|  ├─ skills                   - symbolic link to ../skills
+|  ├─ CLAUDE.md                - the global agents instructions
+|  └─ settings.json            - the claude code central configuration
+├─ opencode/                   - the opencode configuration
+|  ├─ skills                   - symbolic link to ../skills
+|  ├─ AGENTS.md                - the global agents instructions
+|  └─ xxx                      - the opencode central configuration
+├─ skills/                     - the skills definitions, shared by all harnesses
+├─ scripts/                    - the hooks scripts (uv project, cf. `pyproject.toml`)
+|  ├─ agnostic/                - the business rules, free of any provider or I/O concern
+|  |  ├─ analyzers/            - the per-binary policy checks (docker, find, git, grep, readonly, sed)
+|  |  ├─ models/               - the models shared by all the scripts (context, decision, mode, parsing, grammar)
+|  |  ├─ parsers/              - the bash lexing and per-binary argument grammars
+|  |  ├─ templates/            - the message templates used by the policy
+|  |  ├─ utils/                - the pure helpers (filesystem paths, message formatting)
+|  |  ├─ file_access.py        - the file access analysis
+|  |  ├─ generic.py            - the command-agnostic policy (file rules, access checks, mode rules)
+|  |  └─ shell.py              - the bash command analysis
+|  ├─ claude/                  - the claude code adapters: payload parsing, hook responses, entry points
+|  |  ├─ utils/                - the context factory, hook response and session storage
+|  |  ├─ pre_file_access.py    - the hook to control and secure files access from the Read/Edit/Write tools
+|  |  ├─ pre_shell.py          - the hook to control and secure bash calls
+|  |  ├─ post_markdown.py      - the hook to post-process markdown table
 |  |  ├─ user_prompt_submit.py - the hook handling the `/mode` command and the auto mode note
 |  |  └─ statusline_command.py - the script rendering the status bar in claude code
-|  └─ tests/                 - `agnostic/` tests the policy from a plain context, `claude/` the payload to response
-├─ SECURITY.md               - the security rules specifications
-└─ setings.json              - the claude code central configuration
+|  ├─ opencode/                - the opencode adapters
+|  ├─ tests/                   - `agnostic/` tests the policy from a plain context, `claude/` the payload to response
+|  └─ pyproject.toml           - the python project definition and dependencies declaration
+└─ SECURITY.md                 - the security rules specifications
 ```
+
+## Installation
+
+```sh
+git clone https://github.com/Hiryus/ai-harness ~/ai-harness
+ln -s ~/ai-harness/claude ~/.claude
+ln -s ~/ai-harness/opencode ~/.config/opencode
+```
+
+The repository must be cloned in `~/ai-harness`: the hooks protect this path as a harness directory.
 
 ## Requirements
 
 - The [uv command](https://docs.astral.sh/uv/getting-started/installation/) installed and in the PATH.
 
-## Scripts tests
+## Tests
 
-- Run tests with `uv run --with bashlex --with pytest pytest scripts/tests`.
+- Run tests with `uv run --directory scripts pytest tests`.
 - Check typings with `uvx ty check scripts`.
 - Lint with `uvx ruff check scripts`.
 

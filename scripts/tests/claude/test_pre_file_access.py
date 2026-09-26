@@ -241,6 +241,19 @@ def test_write_claude_dir_denied_outside_a_project_nested_in_it(monkeypatch):
     scripts = harness / "scripts"
     assert run(file_path=str(harness / "settings.json"), tool_name="Write", cwd=str(scripts), project_root=str(scripts)) == "deny"
 
+def test_write_harness_repository_denied_from_another_project(monkeypatch):
+    # Rule 1.3: the repository holding the hooks is harness too.
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    path = str(Path(FAKE_HOME) / "ai-harness" / "scripts" / "claude" / "pre_shell.py")
+    assert run(file_path=path, tool_name="Write", mode="edit") == "deny"
+
+def test_write_harness_repository_allowed_when_it_is_the_project(monkeypatch):
+    monkeypatch.setenv("HOME", FAKE_HOME)
+    monkeypatch.setenv("USERPROFILE", FAKE_HOME)
+    repository = Path(FAKE_HOME) / "ai-harness"
+    assert run(file_path=str(repository / "claude" / "settings.json"), tool_name="Write", cwd=str(repository), mode="edit") == "allow"
+
 def test_harness_as_project_is_decided_by_the_project_root_not_the_cwd(monkeypatch):
     # Rule 1.3's exception is about the *project* being the harness. The agent
     # moving into a subdirectory does not shrink the project down to it.

@@ -43,7 +43,7 @@ def check_file_rules(references: list[Reference], context: Context) -> Decision:
         return Decision.deny(f"Refusing to access {format_references(secret_files)}: they look like secret files.")
     if gitdir_files := [ref.text for ref, path in resolved if ref.access is Access.WRITE and is_git_dir(path)]:
         return Decision.deny(f"Refusing to write {format_references(gitdir_files)} inside the .git directory.")
-    if harness_files := [ref.text for ref, path in resolved if ref.access is Access.WRITE and in_harness(path, context.harness_root) and not in_project(path, context.project_root)]:
+    if harness_files := [ref.text for ref, path in resolved if ref.access is Access.WRITE and in_harness(path, context.harness_roots) and not in_project(path, context.project_root)]:
         return Decision.deny(f"Refusing to write {format_references(harness_files)} inside the harness directory.")
     if dynamic_files := [ref.text for ref, _ in resolved if ref.dynamic]:
         return Decision.ask(f"{format_references(dynamic_files)} is built from a shell expansion; cannot statically verify which file it targets.")
@@ -62,7 +62,7 @@ def check_mode_rules(decision: Decision, context: Context) -> Decision:
     """
     if decision.verdict is Verdict.ASK and context.mode is Mode.AUTO:
         with open(os.path.join(TPL_DIR, "auto_mode_denial.md")) as file:
-            return Decision.deny(file.read().strip().format(reason=decision.reason, security_file=context.harness_root / "SECURITY.md"))
+            return Decision.deny(file.read().strip().format(reason=decision.reason))
     return decision
 
 def is_file_access_allowed(path: Path, context: Context, read: bool) -> bool:
@@ -76,7 +76,7 @@ def is_file_access_allowed(path: Path, context: Context, read: bool) -> bool:
         return True
     if is_tmp_file(path):
         return True
-    return read and in_harness(path, context.harness_root)
+    return read and in_harness(path, context.harness_roots)
 
 def worst(*decisions: Decision) -> Decision:
     """
